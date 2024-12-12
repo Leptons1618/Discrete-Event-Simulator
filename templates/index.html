@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulation Parameters</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <style>
+        .hidden {
+            display: none;
+        }
+        .spinner-border {
+            width: 1.5rem;
+            height: 1.5rem;
+            vertical-align: text-bottom;
+        }
+        .scroll-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: none;
+            z-index: 1000;
+            color: rgb(29, 27, 27);
+            border: none;
+            outline: none;
+            cursor: pointer;
+            justify-content: center;
+            align-items: center;
+        }
+        .scroll-button i {
+            font-size: 24px;
+        }
+        .form-group label {
+            font-weight: bold;
+            /* text-transform: capitalize; */
+        }
+        .highlight {
+            /* background-color: #ffeb3b; */
+            animation: highlight-animation 2s ease-in-out;
+        }
+        @keyframes highlight-animation {
+            0% { background-color: #638a69; }
+            100% { background-color: transparent; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">ENTER SIMULATION PARAMETERS</h1>
+        <form id="simulation-form">
+            <div class="form-group">
+                <label for="random_seed">RANDOM SEED (e.g., 42):</label>
+                <input type="text" class="form-control" id="random_seed" name="random_seed" placeholder="e.g., 42" required>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="num_parts">NUMBER OF PARTS (e.g., 200):</label>
+                        <input type="text" class="form-control" id="num_parts" name="num_parts" placeholder="e.g., 200" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="processing_times">PROCESSING TIME (e.g., 4-6,5-7):</label>
+                        <input type="text" class="form-control" id="processing_times" name="processing_times" placeholder="e.g., 4-6,5-7" required>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label for="machine_capacities">MACHINE CAPACITIES (e.g., 4, 6, 8):</label>
+                        <input type="text" class="form-control" id="machine_capacities" name="machine_capacities" placeholder="e.g., 4,8,10" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="initial_inter_arrival_range">INITIAL INTER-ARRIVAL TIME RANGE (e.g., 1.0-10.0):</label>
+                        <input type="text" class="form-control" id="initial_inter_arrival_range" name="initial_inter_arrival_range" placeholder="e.g., 1.0-10.0" required>
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary font-weight-bold">
+                RUN SIMULATION
+                <span class="spinner-border spinner-border-sm hidden" role="status" aria-hidden="true"></span>
+            </button>
+        </form>
+
+        <div id="results-section" class="mt-5 hidden">
+            <h2>BEST CONFIGURATION</h2>
+            <table class="table table-bordered">
+                <thead class="thead-light">
+                    <tr>
+                        <th>Machine Capacity</th>
+                        <th>Num Parts</th>
+                        <th>Inter-Arrival Time</th>
+                        <th>Processing Time</th>
+                        <th>Average Waiting Time (minutes)</th>
+                        <th>Machine Utilization (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="best-configuration">
+                    <tr>
+                        <td colspan="6" class="text-center">No data available</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>ALL SIMULATION RESULTS</h2>
+            <table class="table table-bordered">
+                <thead class="thead-light">
+                    <tr>
+                        <th>Machine Capacity</th>
+                        <th>Processing Time</th>
+                        <th>Interval</th>
+                        <th>Num Parts</th>
+                        <th>Inter-Arrival Time</th>
+                        <th>Average Waiting Time (minutes)</th>
+                        <th>Machine Utilization (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="all-results">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <button class="btn scroll-button" id="scroll-button">
+        <i class="fas fa-arrow-down"></i>
+    </button>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            let keepUpWithData = true;
+
+            $('#simulation-form').on('submit', function(event) {
+                event.preventDefault();
+                $('#results-section').addClass('hidden');
+                $('#best-configuration').html('<tr><td colspan="6" class="text-center">No data available</td></tr>');
+                $('#all-results').empty();
+                $('.spinner-border').removeClass('hidden');
+                $('button[type="submit"]').prop('disabled', true);
+                keepUpWithData = true;
+
+                $.ajax({
+                    url: '/run_simulation',
+                    method: 'POST',
+                    data: $(this).serialize(),
+                    success: function(response) {
+                        $('#results-section').removeClass('hidden');
+                        $('#scroll-button').fadeIn();
+
+                        // Populate all results
+                        response.all_results.forEach(function(result, index) {
+                            setTimeout(function() {
+                                $('#all-results').append(
+                                    '<tr>' +
+                                    '<td>' + result.machine_capacity + '</td>' +
+                                    '<td>' + result.processing_time + '</td>' +
+                                    '<td>' + result.interval + '</td>' +
+                                    '<td>' + result.num_parts + '</td>' +
+                                    '<td>' + result.inter_arrival_time + '</td>' +
+                                    '<td>' + result.average_waiting_time + '</td>' +
+                                    '<td>' + result.machine_utilization + '</td>' +
+                                    '</tr>'
+                                );
+                                if (keepUpWithData) {
+                                    window.scrollTo(0, document.body.scrollHeight);
+                                }
+                                toggleScrollButton();
+                            }, index * 50); // Reduced delay for faster animation effect
+                        });
+
+                        // Populate best configuration at the end
+                        setTimeout(function() {
+                            if (response.best_configuration && response.best_results) {
+                                $('#best-configuration').html(
+                                    '<tr class="highlight">' +
+                                    '<td>' + response.best_configuration.machine_capacity + '</td>' +
+                                    '<td>' + response.best_configuration.num_parts + '</td>' +
+                                    '<td>' + response.best_configuration.inter_arrival_time + '</td>' +
+                                    '<td>' + response.best_configuration.processing_time + '</td>' +
+                                    '<td>' + response.best_results.average_waiting_time + '</td>' +
+                                    '<td>' + response.best_results.machine_utilization + '</td>' +
+                                    '</tr>'
+                                );
+                            } else {
+                                $('#best-configuration').html('<tr><td colspan="6" class="text-center">No configuration met the criteria.</td></tr>');
+                            }
+                            $('.spinner-border').addClass('hidden');
+                            $('button[type="submit"]').prop('disabled', false);
+                            toggleScrollButton();
+                        }, response.all_results.length * 50); // Reduced delay for faster animation effect
+                    }
+                });
+            });
+
+            // Scroll button
+            $('#scroll-button').on('click', function() {
+                if ($(this).find('i').hasClass('fa-arrow-down')) {
+                    keepUpWithData = true;
+                    window.scrollTo(0, document.body.scrollHeight);
+                } else {
+                    keepUpWithData = false;
+                    window.scrollTo(0, 0);
+                }
+                toggleScrollButton();
+            });
+
+            // Show scroll button when results are visible
+            $(window).on('scroll', function() {
+                toggleScrollButton();
+            });
+
+            function toggleScrollButton() {
+                if ($(window).scrollTop() + $(window).height() >= $(document).height() - 10) {
+                    $('#scroll-button').find('i').removeClass('fa-arrow-down').addClass('fa-arrow-up');
+                } else {
+                    $('#scroll-button').find('i').removeClass('fa-arrow-up').addClass('fa-arrow-down');
+                }
+            }
+        });
+    </script>
+</body>
+</html>
