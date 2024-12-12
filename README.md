@@ -18,8 +18,8 @@ This project is a web application that allows users to input simulation paramete
 
 1. Clone the repository:
     ```sh
-    git clone https://github.com/yourusername/yourrepository.git
-    cd yourrepository
+    git clone https://github.com/Leptons1618/Discrete-Event-Simulator/
+    cd Discrete-Event-Simulator
     ```
 
 2. Install the required Python packages:
