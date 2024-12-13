@@ -121,17 +121,15 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     with ui.row().classes('h-screen').style('flex-wrap: nowrap;'):
-        # Parameters section
-        with ui.column().classes('w-1/4 p-4 bg-gray-100 border-r').style('background-color: #f8f9fa; border-right: 1px solid #dee2e6;'):
-            ui.label('Parameters').classes('text-h6 mb-4').style('font-weight: bold; color: #343a40;')
-            random_seed = ui.input(label='Random Seed', placeholder='e.g., 42', autocomplete=['42', '43', '44']).classes('mb-4').style('border: 1px solid #ced4da; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
-            num_parts = ui.input(label='Number of Parts', placeholder='e.g., 200', autocomplete=['200', '300', '400']).classes('mb-4').style('border: 1px solid #ced4da; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
-            machine_capacities = ui.input(label='Machine Capacities', placeholder='e.g., 4,6,8', autocomplete=['4,6,8', '5,7,9']).classes('mb-4').style('border: 1px solid #ced4da; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
-            processing_times = ui.input(label='Processing Times', placeholder='e.g., 4-6,5-7', autocomplete=['4-6,5-7', '3-5,6-8']).classes('mb-4').style('border: 1px solid #ced4da; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
-            initial_inter_arrival_range = ui.input(label='Inter-Arrival Time Range', placeholder='e.g., 1.0-10.0', autocomplete=['1.0-10.0', '2.0-8.0']).classes('mb-4').style('border: 1px solid #ced4da; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
-            run_button = ui.button('Run').classes('mt-auto').style('background-color: #007bff; color: white; border: none; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
+        with ui.column().classes('w-1/4 p-4 bg-gray-100 border-r'):
+            ui.label('Parameters').classes('text-h6 mb-4')
+            random_seed = ui.input('Random Seed (e.g., 42)').classes('mb-4')
+            num_parts = ui.input('Number of Parts (e.g., 200)').classes('mb-4')
+            machine_capacities = ui.input('Machine Capacities (e.g., 4,6,8)').classes('mb-4')
+            processing_times = ui.input('Processing Times (e.g., 4-6,5-7)').classes('mb-4')
+            initial_inter_arrival_range = ui.input('Inter-Arrival Time Range (e.g., 1.0-10.0)').classes('mb-4')
+            run_button = ui.button('Run').classes('mt-auto')
 
-        # Results section
         with ui.column().classes('w-3/4 p-4'):
             results_section = ui.column()
             with results_section:
