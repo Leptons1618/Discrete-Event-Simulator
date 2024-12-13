@@ -129,7 +129,7 @@ def main():
             machine_capacities = ui.input(label='Machine Capacities', placeholder='e.g., 4,6,8', autocomplete=['4,6,8', '5,7,9']).classes('mb-4').style('border: 1px solid #ced4da; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
             processing_times = ui.input(label='Processing Times', placeholder='e.g., 4-6,5-7', autocomplete=['4-6,5-7', '3-5,6-8']).classes('mb-4').style('border: 1px solid #ced4da; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
             initial_inter_arrival_range = ui.input(label='Inter-Arrival Time Range', placeholder='e.g., 1.0-10.0', autocomplete=['1.0-10.0', '2.0-8.0']).classes('mb-4').style('border: 1px solid #ced4da; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
-            run_button = ui.button('Run').classes('mt-auto').style('background-color: #007bff; color: white; border: none; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
+            run_button = ui.button('Run').classes('mt-auto')
 
         # Results section
         with ui.column().classes('w-3/4 p-4'):
@@ -143,7 +143,7 @@ def main():
                     {'name': 'processing_time', 'label': 'Processing Time', 'field': 'processing_time', 'sortable': True},
                     {'name': 'average_waiting_time', 'label': 'Average Waiting Time (minutes)', 'field': 'average_waiting_time', 'sortable': True},
                     {'name': 'machine_utilization', 'label': 'Machine Utilization (%)', 'field': 'machine_utilization', 'sortable': True},
-                ], rows=[], row_key='machine_capacity').classes('mb-4')
+                ], rows=[], row_key='machine_capacity').classes('mb-4').style('background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 0.25rem; padding: 0.375rem 0.75rem;')
                 ui.label('All Results').classes('text-h6 mb-2')
                 all_results_table = ui.table(columns=[
                     {'name': 'machine_capacity', 'label': 'Machine Capacity', 'field': 'machine_capacity', 'required': True, 'align': 'left'},
@@ -157,7 +157,7 @@ def main():
 
         run_button.on('click', on_run_button_click)
 
-    ui.run(native=True, window_size=(1600, 980))
+    ui.run(native=True, window_size=(1500, 800), reload=True)
 
 if __name__ in {"__main__", "__mp_main__"}:
     main()
