@@ -2,17 +2,22 @@ import simpy
 import random
 import logging
 import csv
+import ast  # Added to parse tuple strings
 
 # Function to process a single batch with given parameters
+def parse_time_range(time_str):
+    """Parses a string in the format "(min, max)" and returns a tuple of floats."""
+    return tuple(map(float, ast.literal_eval(time_str)))
+
 def process_batch(env, name, params, resources, waiting_times):
-    # Extract processing times
-    batching_time = (float(params['Batching Time Min']), float(params['Batching Time Max']))
-    hot_mixing_time = (float(params['Hot Mixing Time Min']), float(params['Hot Mixing Time Max']))
-    cold_mixing_time = (float(params['Cold Mixing Time Min']), float(params['Cold Mixing Time Max']))
-    extrusion_time = (float(params['Extrusion Time Min']), float(params['Extrusion Time Max']))
-    cooling_time = (float(params['Cooling Time Min']), float(params['Cooling Time Max']))
-    inspection_time = (float(params['Inspection Time Min']), float(params['Inspection Time Max']))
-    packing_time = (float(params['Packing Time Min']), float(params['Packing Time Max']))
+    # Extract processing times using the new tuple parameters
+    batching_time = parse_time_range(params['Batching Time'])
+    hot_mixing_time = parse_time_range(params['Hot Mixing Time'])
+    cold_mixing_time = parse_time_range(params['Cold Mixing Time'])
+    extrusion_time = parse_time_range(params['Extrusion Time'])
+    cooling_time = parse_time_range(params['Cooling Time'])
+    inspection_time = parse_time_range(params['Inspection Time'])
+    packing_time = parse_time_range(params['Packing Time'])
 
     arrival_time = env.now
     logging.info(f'{name} arrives at batching system at {arrival_time:.2f}.')
@@ -109,7 +114,7 @@ def main():
             logging.info(f"Starting simulation for {scenario_name}")
             avg_time = run_simulation(row)
             logging.info(f"Completed simulation for {scenario_name}: Average Processing Time = {avg_time:.2f} minutes\n")
-            # Include parameters and resource capacities in the results
+            # Include parameters with tuple strings in the results
             result = {'Scenario': scenario_name, 'Average Processing Time': avg_time}
             result.update(row)
             results.append(result)
