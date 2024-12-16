@@ -9,7 +9,7 @@ from datetime import datetime
 
 # Configure logging
 log_filename = './logs/application.log'
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[ 
     logging.FileHandler(log_filename),
     logging.StreamHandler()
 ])
@@ -112,3 +112,4 @@ def main():
 
 if __name__ in {"__main__", "__mp_main__"}:
     main()
+ 
