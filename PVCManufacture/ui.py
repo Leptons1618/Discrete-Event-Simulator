@@ -63,8 +63,10 @@ def display_scenarios():
         logging.info("Displaying uploaded scenarios.")
         with ui.card().classes('w-full'):
             ui.label("Uploaded Scenarios").classes('text-h5')
-            ui.table(columns=[{"name": col, "label": col, "field": col} for col in scenarios_df.columns],
-                     rows=scenarios_df.to_dict(orient="records")).classes('w-full')
+            ui.table(
+                columns=[{"name": col, "label": col, "field": col} for col in scenarios_df.columns],
+                rows=scenarios_df.to_dict(orient="records")
+            ).classes('w-full')
 
 # Run the simulation for all scenarios
 def run_batch_simulation():
@@ -78,12 +80,13 @@ def run_batch_simulation():
     try:
         results = []
         for _, scenario in scenarios_df.iterrows():
-            logging.info(f"Running simulation for scenario: {scenario.get('Scenario', 'Unnamed')}")
+            scenario_name = scenario.get('Scenario', 'Unnamed')
+            logging.info(f"Running simulation for scenario: {scenario_name}")
             avg_time = run_simulation(scenario.to_dict())
             scenario_result = scenario.to_dict()
             scenario_result["Average Processing Time"] = round(avg_time, 2)
             results.append(scenario_result)
-            logging.info(f"Simulation for scenario '{scenario.get('Scenario', 'Unnamed')}' completed with average time {avg_time:.2f} minutes.")
+            logging.info(f"Simulation for scenario '{scenario_name}' completed with average time {avg_time:.2f} minutes.")
         
         results_df = pd.DataFrame(results)
         display_results()
@@ -100,8 +103,17 @@ def display_results():
         logging.info("Displaying simulation results.")
         with ui.card().classes('w-full'):
             ui.label("Simulation Results").classes('text-h5')
-            ui.table(columns=[{"name": col, "label": col, "field": col} for col in results_df.columns],
-                     rows=results_df.to_dict(orient="records")).classes('w-full')
+            table = ui.table(
+                columns=[
+                    {"name": "Scenario", "label": "Scenario", "field": "Scenario"},
+                    {"name": "Average Processing Time", "label": "Average Processing Time", "field": "Average Processing Time"}
+                ],
+                rows=results_df[["Scenario", "Average Processing Time"]].to_dict(orient="records")
+            )
+            table.classes('striped hover compact')
+            table.classes('w-full max-w-sm')
+    
+            ui.button('Download Result', on_click=download_results, color="green", icon='file_download').classes('mt-4')
 
 # Function to allow downloading the results as Excel
 def download_results():
@@ -129,19 +141,18 @@ logging.info("UI layout initialized.")
 with ui.card().classes('w-full'):
     logging.info("Setting up upload section in UI.")
     ui.label("Upload Scenarios CSV").classes('text-h5')
-    ui.upload(on_upload=upload_csv, label="Upload CSV File")
+    ui.upload(on_upload=upload_csv, label="Upload CSV File").classes('w-full')  # Made width full
 
 # Run Simulation Button
-ui.button("Simulate", on_click=run_batch_simulation, color="blue")
-
-# Download Results Button
-ui.button("Results", on_click=download_results, color="green", icon='file_download')
+ui.button("Simulate", on_click=run_batch_simulation, color="blue", icon='play_arrow')
+logging.info("Simulate button added to UI.")
 
 # Start the NiceGUI app
 if __name__ in {"__main__", "__mp_main__"}:
     logging.info('Starting the application.')
     try:
-        ui.run(title="Ashirvad", window_size=(1600, 900), native=True, reload=True)
+        ui.run(title="Ashirvad", window_size=(1600, 900), native=True, reload=False)
     except Exception as e:
         logging.error(f"Application failed to start: {e}")
+
     logging.info('Application terminated.')
