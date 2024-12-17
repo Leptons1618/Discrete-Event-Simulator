@@ -102,7 +102,7 @@ def display_results():
     if results_df is not None:
         logging.info("Displaying simulation results.")
         with ui.card().classes('w-full'):
-            ui.label("Simulation Results").classes('text-h5')
+            ui.label("Simulation Results").classes('text-h5 capitalize')
             table = ui.table(
                 columns=[
                     {"name": "Scenario", "label": "Scenario", "field": "Scenario"},
@@ -140,7 +140,7 @@ logging.info("UI layout initialized.")
 # Upload Section
 with ui.card().classes('w-full'):
     logging.info("Setting up upload section in UI.")
-    ui.label("Upload Scenarios CSV").classes('text-h5')
+    ui.label("Upload Scenarios CSV").classes('text-h5 capitalize')
     ui.upload(on_upload=upload_csv, label="Upload CSV File").classes('w-full')  # Made width full
 
 # Run Simulation Button
