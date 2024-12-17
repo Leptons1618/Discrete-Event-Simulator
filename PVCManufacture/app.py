@@ -6,20 +6,20 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 # Simulation parameters
-BATCHING_TIME = (5, 10)  # Time to mix one batch (minutes)
-HOT_MIXING_TIME = (10, 20)  # Time for hot mixing (minutes)
-COLD_MIXING_TIME = (5, 10)  # Time for cold mixing (minutes)
-EXTRUSION_TIME = (8, 12)  # Time to extrude one pipe (minutes)
-COOLING_TIME = (5, 10)  # Time to cool one pipe (minutes)
-INSPECTION_TIME = (2, 5)  # Time for inspection (minutes)
-PACKING_TIME = (3, 7)  # Time for packing (minutes)
+BATCHING_TIME = (5, 10)
+HOT_MIXING_TIME = (10, 20)
+COLD_MIXING_TIME = (5, 10)
+EXTRUSION_TIME = (8, 12) 
+COOLING_TIME = (5, 10)
+INSPECTION_TIME = (2, 5)
+PACKING_TIME = (3, 7)
 NUM_SILOS = 2
 NUM_HOT_MIXERS = 1
 NUM_COLD_MIXERS = 1
 NUM_EXTRUDERS = 2
 NUM_INSPECTION_STATIONS = 2
 NUM_PACKING_STATIONS = 1
-NUM_BATCHES = 50  # Total number of batches to process
+NUM_BATCHES = 50
 
 # Metrics
 waiting_times = []
