@@ -151,7 +151,7 @@ logging.info("Simulate button added to UI.")
 if __name__ in {"__main__", "__mp_main__"}:
     logging.info('Starting the application.')
     try:
-        ui.run(title="Ashirvad", window_size=(1600, 900), native=True, reload=False)
+        ui.run(title="Ashirvad", window_size=(1920, 1200), native=True, reload=False)
     except Exception as e:
         logging.error(f"Application failed to start: {e}")
 
