@@ -6,9 +6,15 @@ import ast  # Added to parse tuple strings
 
 # Function to process a single batch with given parameters
 def parse_time_range(time_str):
-    """Parses a string in the format "(min, max)" and returns a tuple of floats."""
+    """Parses a string like '10-20' or '(10, 20)' and returns a tuple of floats."""
     logging.debug(f"Parsing time range from string: {time_str}")
-    return tuple(map(float, ast.literal_eval(time_str)))
+    try:
+        # Attempt to parse as a tuple
+        return tuple(map(float, ast.literal_eval(time_str)))
+    except (ValueError, SyntaxError):
+        # Fallback to split by '-'
+        min_val, max_val = map(float, time_str.replace('(', '').replace(')', '').split('-'))
+        return (min_val, max_val)
 
 def process_batch(env, name, params, resources, waiting_times):
     logging.info(f"{name} processing started.")
@@ -68,6 +74,14 @@ def process_batch(env, name, params, resources, waiting_times):
         logging.debug(f'{name} acquired inspection station.')
         yield env.timeout(random.uniform(*inspection_time))
         logging.info(f'{name} completes inspection at {env.now:.2f}.')
+
+    # After inspection, possible rework due to quality failure
+    quality_check = random.random()
+    if quality_check < float(params.get('Rework Probability', 0.1)):
+        logging.info(f'{name} failed inspection and requires rework.')
+        rework_time = parse_time_range(params.get('Rework Time', '(30, 60)'))
+        yield env.timeout(random.uniform(*rework_time))
+        logging.info(f'{name} rework completed at {env.now:.2f}.')
 
     # Packing
     logging.debug(f'{name} requesting packing station.')
