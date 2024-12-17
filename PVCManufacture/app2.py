@@ -104,17 +104,39 @@ def production_shift(env, shift_num, operator_productivity, machine, day_num, sh
         shift_logs.append((day_num, shift_in_day, produced_this_shift))
         logging.info(f"{current_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} ends. Produced {produced_this_shift:.2f} kg.")
 
+# Add default machine counts if not provided
+DEFAULT_MACHINE_COUNTS = {
+    'Silos': 1,
+    'Hot Mixers': 1,
+    'Cold Mixers': 1,
+    'Hoppers': 2,
+    'Extruders': 2,
+    'Inspection Stations': 2,
+    'Printing Stations': 2
+}
+
 def production_simulation(env):
     """Manages the overall production process"""
-    machine = simpy.Resource(env, capacity=1)  # Single production line
-    env.process(machine_maintenance(env, machine))
+    # Define resources with capacities from parameters or default counts
+    resources = {
+        'silos': simpy.Resource(env, capacity=int(DEFAULT_MACHINE_COUNTS['Silos'])),
+        'hot_mixer': simpy.Resource(env, capacity=int(DEFAULT_MACHINE_COUNTS['Hot Mixers'])),
+        'cold_mixer': simpy.Resource(env, capacity=int(DEFAULT_MACHINE_COUNTS['Cold Mixers'])),
+        'hoppers': simpy.Resource(env, capacity=int(DEFAULT_MACHINE_COUNTS['Hoppers'])),
+        'extruders': simpy.Resource(env, capacity=int(DEFAULT_MACHINE_COUNTS['Extruders'])),
+        'inspection_station': simpy.Resource(env, capacity=int(DEFAULT_MACHINE_COUNTS['Inspection Stations'])),
+        'printing_station': simpy.Resource(env, capacity=int(DEFAULT_MACHINE_COUNTS['Printing Stations']))
+    }
+    logging.info(f"Resources initialized with machine counts: {DEFAULT_MACHINE_COUNTS}")
+
+    env.process(machine_maintenance(env, resources['extruders']))  # Updated to pass the correct resource
 
     shift_number = 1
     while produced_kg < ACTUAL_DEMAND:
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
         shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
         operator_productivity = PRODUCTIVITY_PERCENTAGE[(shift_number - 1) % SHIFTS_PER_DAY]
-        env.process(production_shift(env, shift_number, operator_productivity, machine, day_num, shift_in_day))
+        env.process(production_shift(env, shift_number, operator_productivity, resources['extruders'], day_num, shift_in_day))
         yield env.timeout(SHIFT_DURATION)  # Move to the next shift
         shift_number += 1
 
