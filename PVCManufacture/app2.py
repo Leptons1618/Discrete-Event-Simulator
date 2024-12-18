@@ -1,7 +1,6 @@
 import simpy
 import random
 import logging
-import numpy as np  # Ensure numpy is imported
 import datetime  # Import datetime module
 from simpy.core import StopSimulation  # Handle simulation termination
 
