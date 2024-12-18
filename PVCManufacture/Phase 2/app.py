@@ -150,7 +150,9 @@ def production_simulation(env):
     # Determine the starting shift based on SIMULATION_START
     current_time = SIMULATION_START
     shift_in_day = get_shift(current_time)
-    shift_number = (1 - 1) * SHIFTS_PER_DAY + shift_in_day  # Initialize shift_number correctly
+    shift_number = (
+        (current_time.day - SIMULATION_START.day) * SHIFTS_PER_DAY
+    ) + shift_in_day  # Initialize shift_number correctly based on the day
 
     while produced_kg < ACTUAL_DEMAND:
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
