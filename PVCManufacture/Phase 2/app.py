@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 # Simulation parameters
 PRODUCTION_RATE = 100  # PVC production rate in kg/hour
-ACTUAL_DEMAND = 5000  # Actual demand for PVC in kg
+ACTUAL_DEMAND = 1800  # Actual demand for PVC in kg
 SHIFTS_PER_DAY = 3  # Number of shifts per day
 PRODUCTIVITY_PERCENTAGE = [0.9, 0.8, 0.7]  # Productivity of operators for each shift
 MAINTENANCE_PROBABILITY = 0.03  # Probability of maintenance during a shift
@@ -21,13 +21,20 @@ SETUP_TIME = 40  # Machine setup time in minutes
 # Define static shift durations in minutes
 SHIFT_DURATIONS = [480, 480, 480]  # Shift 1: 8 hours, Shift 2: 8 hours, Shift 3: 8 hours
 
+# Define static shift times
+SHIFT_TIMES = [
+    (datetime.time(0, 0), datetime.time(8, 0)),    # Shift 1: 12am to 8am
+    (datetime.time(8, 0), datetime.time(16, 0)),   # Shift 2: 8am to 4pm
+    (datetime.time(16, 0), datetime.time(23, 59))  # Shift 3: 4pm to 11:59pm
+]
+
 # Metrics
 produced_kg = 0
 downtime_minutes = 0
 shift_logs = []
 
 # Define simulation start datetime
-SIMULATION_START = datetime.datetime(2024, 12, 18, 13, 20)  # Example start: Dec 18, 2024, 8:00 AM
+SIMULATION_START = datetime.datetime(2024, 12, 18, 13, 20)  # Example start: Dec 18, 2024, 1:20 PM
 
 def get_current_time(env):
     """Returns the current simulation time as a datetime object."""
