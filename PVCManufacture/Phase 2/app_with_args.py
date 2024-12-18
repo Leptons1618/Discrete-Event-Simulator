@@ -8,7 +8,6 @@ import argparse  # Import argparse module
 parser = argparse.ArgumentParser(description='PVC Manufacturing Simulation')
 parser.add_argument('--production_rate', type=float, default=100, help='PVC production rate in kg/hour')
 parser.add_argument('--actual_demand', type=float, default=5000, help='Actual demand for PVC in kg')
-parser.add_argument('--shift_duration', type=int, default=480, help='Shift duration in minutes (8 hours)')
 parser.add_argument('--shifts_per_day', type=int, default=3, help='Number of shifts per day')
 parser.add_argument('--productivity_percentage', type=float, nargs='+', default=[0.9, 0.8, 0.7], help='Productivity of operators for each shift')
 parser.add_argument('--maintenance_probability', type=float, default=0.03, help='Probability of maintenance during a shift')
@@ -22,7 +21,6 @@ args = parser.parse_args()
 # Assign parsed arguments to variables
 PRODUCTION_RATE = args.production_rate
 ACTUAL_DEMAND = args.actual_demand
-SHIFT_DURATION = args.shift_duration
 SHIFTS_PER_DAY = args.shifts_per_day
 PRODUCTIVITY_PERCENTAGE = args.productivity_percentage
 MAINTENANCE_PROBABILITY = args.maintenance_probability
@@ -46,6 +44,9 @@ SHIFT_TIMES = [
     (datetime.time(8, 0), datetime.time(16, 0)), # Shift 2: 8am to 4pm
     (datetime.time(16, 0), datetime.time(23, 59)) # Shift 3: 4pm to 11:59pm
 ]
+
+# Define static shift durations in minutes
+SHIFT_DURATIONS = [480, 480, 480]  # Shift 1: 8 hours, Shift 2: 8 hours, Shift 3: 8 hours
 
 def get_current_time(env):
     """Returns the current simulation time as a datetime object."""
@@ -101,7 +102,7 @@ def production_shift(env, shift_num, operator_productivity, machine, day_num, sh
     setup_completed_time = get_current_time(env)
     logging.info(f"{setup_completed_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} setup completed.")
 
-    shift_time = SHIFT_DURATION * effective_productivity
+    shift_time = SHIFT_DURATIONS[shift_in_day - 1] * OPERATOR_SKILLS[(shift_in_day - 1) % SHIFTS_PER_DAY]
     produced_this_shift = 0
 
     while shift_time > 0 and produced_kg < ACTUAL_DEMAND:
@@ -165,7 +166,7 @@ def production_simulation(env):
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
         operator_productivity = PRODUCTIVITY_PERCENTAGE[(shift_in_day - 1) % SHIFTS_PER_DAY]
         env.process(production_shift(env, shift_number, operator_productivity, resources['extruders'], day_num, shift_in_day))
-        yield env.timeout(SHIFT_DURATION)  # Move to the next shift
+        yield env.timeout(SHIFT_DURATIONS[shift_in_day - 1])  # Updated to use fixed shift durations
         shift_number += 1
 
 if __name__ == '__main__':

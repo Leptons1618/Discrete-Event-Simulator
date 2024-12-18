@@ -10,7 +10,6 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 # Simulation parameters
 PRODUCTION_RATE = 100  # PVC production rate in kg/hour
 ACTUAL_DEMAND = 5000  # Actual demand for PVC in kg
-SHIFT_DURATION = 480  # Shift duration in minutes (8 hours)
 SHIFTS_PER_DAY = 3  # Number of shifts per day
 PRODUCTIVITY_PERCENTAGE = [0.9, 0.8, 0.7]  # Productivity of operators for each shift
 MAINTENANCE_PROBABILITY = 0.03  # Probability of maintenance during a shift
@@ -19,13 +18,16 @@ BREAKDOWN_TIME = (30, 60)  # Time to repair machine breakdown (minutes)
 MAINTENANCE_TIME = (20, 40)  # Time taken for scheduled maintenance (minutes)
 SETUP_TIME = 40  # Machine setup time in minutes
 
+# Define static shift durations in minutes
+SHIFT_DURATIONS = [480, 480, 480]  # Shift 1: 8 hours, Shift 2: 8 hours, Shift 3: 8 hours
+
 # Metrics
 produced_kg = 0
 downtime_minutes = 0
 shift_logs = []
 
 # Define simulation start datetime
-SIMULATION_START = datetime.datetime(2024, 12, 18, 8, 0)  # Example start: Dec 18, 2024, 8:00 AM
+SIMULATION_START = datetime.datetime(2024, 12, 18, 13, 20)  # Example start: Dec 18, 2024, 8:00 AM
 
 def get_current_time(env):
     """Returns the current simulation time as a datetime object."""
@@ -73,7 +75,7 @@ def production_shift(env, shift_num, operator_productivity, machine, day_num, sh
     setup_completed_time = get_current_time(env)
     logging.info(f"{setup_completed_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} setup completed.")
 
-    shift_time = SHIFT_DURATION * effective_productivity
+    shift_time = SHIFT_DURATIONS[shift_in_day - 1] * OPERATOR_SKILLS[(shift_in_day - 1) % SHIFTS_PER_DAY]
     produced_this_shift = 0
 
     while shift_time > 0 and produced_kg < ACTUAL_DEMAND:
@@ -136,7 +138,7 @@ def production_simulation(env):
         shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
         operator_productivity = PRODUCTIVITY_PERCENTAGE[(shift_number - 1) % SHIFTS_PER_DAY]
         env.process(production_shift(env, shift_number, operator_productivity, resources['extruders'], day_num, shift_in_day))
-        yield env.timeout(SHIFT_DURATION)  # Move to the next shift
+        yield env.timeout(SHIFT_DURATIONS[shift_in_day - 1])  # Updated to use fixed shift durations
         shift_number += 1
 
 # Run simulation
