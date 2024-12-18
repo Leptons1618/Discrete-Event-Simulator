@@ -13,11 +13,11 @@ ACTUAL_DEMAND = 5000  # Actual demand for PVC in kg
 SHIFT_DURATION = 480  # Shift duration in minutes (8 hours)
 SHIFTS_PER_DAY = 3  # Number of shifts per day
 PRODUCTIVITY_PERCENTAGE = [0.9, 0.8, 0.7]  # Productivity of operators for each shift
-MAINTENANCE_PROBABILITY = 0.08  # Probability of maintenance during a shift
-BREAKDOWN_PROBABILITY = 0.05  # Probability of machine breakdown
+MAINTENANCE_PROBABILITY = 0.03  # Probability of maintenance during a shift
+BREAKDOWN_PROBABILITY = 0.01  # Probability of machine breakdown
 BREAKDOWN_TIME = (30, 60)  # Time to repair machine breakdown (minutes)
 MAINTENANCE_TIME = (20, 40)  # Time taken for scheduled maintenance (minutes)
-SETUP_TIME = 60  # Machine setup time in minutes
+SETUP_TIME = 40  # Machine setup time in minutes
 
 # Metrics
 produced_kg = 0
