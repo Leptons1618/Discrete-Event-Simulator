@@ -28,6 +28,14 @@ SHIFT_TIMES = [
     (datetime.time(16, 0), datetime.time(23, 59))  # Shift 3: 4pm to 11:59pm
 ]
 
+def get_shift(current_time):
+    """Returns the shift number based on the current time."""
+    current_time_only = current_time.time()
+    for i, (start, end) in enumerate(SHIFT_TIMES, start=1):
+        if start <= current_time_only <= end:
+            return i
+    return 1  # Default to Shift 1 if time does not match any shift
+
 # Metrics
 produced_kg = 0
 downtime_minutes = 0
@@ -139,7 +147,11 @@ def production_simulation(env):
 
     env.process(machine_maintenance(env, resources['extruders']))  # Updated to pass the correct resource
 
-    shift_number = 1
+    # Determine the starting shift based on SIMULATION_START
+    current_time = SIMULATION_START
+    shift_in_day = get_shift(current_time)
+    shift_number = (1 - 1) * SHIFTS_PER_DAY + shift_in_day  # Initialize shift_number correctly
+
     while produced_kg < ACTUAL_DEMAND:
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
         shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
