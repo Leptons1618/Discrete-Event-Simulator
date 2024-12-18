@@ -1,4 +1,3 @@
-
 import simpy
 import random
 import logging
@@ -17,7 +16,7 @@ parser.add_argument('--breakdown_probability', type=float, default=0.01, help='P
 parser.add_argument('--breakdown_time', type=float, nargs=2, default=[30, 60], help='Time to repair machine breakdown (minutes)')
 parser.add_argument('--maintenance_time', type=float, nargs=2, default=[20, 40], help='Time taken for scheduled maintenance (minutes)')
 parser.add_argument('--setup_time', type=int, default=40, help='Machine setup time in minutes')
-parser.add_argument('--simulation_start', type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d %H:%M'), default=datetime.datetime(2024, 12, 19, 7, 50), help='Simulation start datetime (YYYY-MM-DD HH:MM)')
+parser.add_argument('--simulation_start', type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d %H:%M'), default=datetime.datetime(2024, 12, 19, 13, 50), help='Simulation start datetime (YYYY-MM-DD HH:MM)')
 args = parser.parse_args()
 
 # Assign parsed arguments to variables
@@ -41,9 +40,24 @@ produced_kg = 0
 downtime_minutes = 0
 shift_logs = []
 
+# Define static shift times
+SHIFT_TIMES = [
+    (datetime.time(0, 0), datetime.time(8, 0)),  # Shift 1: 12am to 8am
+    (datetime.time(8, 0), datetime.time(16, 0)), # Shift 2: 8am to 4pm
+    (datetime.time(16, 0), datetime.time(23, 59)) # Shift 3: 4pm to 11:59pm
+]
+
 def get_current_time(env):
     """Returns the current simulation time as a datetime object."""
     return SIMULATION_START + datetime.timedelta(minutes=env.now)
+
+def get_shift(current_time):
+    """Returns the shift number based on the current time."""
+    current_time_only = current_time.time()
+    for i, (start, end) in enumerate(SHIFT_TIMES, start=1):
+        if start <= current_time_only <= end:
+            return i
+    return None
 
 # Dynamic maintenance probability based on machine usage
 def get_maintenance_probability():
@@ -146,9 +160,10 @@ def production_simulation(env):
 
     shift_number = 1
     while produced_kg < ACTUAL_DEMAND:
+        current_time = get_current_time(env)
+        shift_in_day = get_shift(current_time)
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
-        shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
-        operator_productivity = PRODUCTIVITY_PERCENTAGE[(shift_number - 1) % SHIFTS_PER_DAY]
+        operator_productivity = PRODUCTIVITY_PERCENTAGE[(shift_in_day - 1) % SHIFTS_PER_DAY]
         env.process(production_shift(env, shift_number, operator_productivity, resources['extruders'], day_num, shift_in_day))
         yield env.timeout(SHIFT_DURATION)  # Move to the next shift
         shift_number += 1
