@@ -33,7 +33,14 @@ SIMULATION_START = args.simulation_start
 NUM_LINES = args.num_lines
 
 # Logging setup
-logging.basicConfig(level=logging.INFO, format='%(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    handlers=[
+        logging.FileHandler("simulation.log"),
+        logging.StreamHandler()
+    ]
+)
 
 # Metrics
 produced_kg = 0
@@ -184,6 +191,22 @@ def production_simulation(env, num_lines):
     yield env.timeout(0)  # Ensure the function is a generator
 
 if __name__ == '__main__':
+    # Log simulation configuration
+    logging.info("Simulation Configuration:")
+    logging.info(f"Production rate: {PRODUCTION_RATE} kg/hour")
+    logging.info(f"Actual demand: {ACTUAL_DEMAND} kg")
+    logging.info(f"Shifts per day: {SHIFTS_PER_DAY}")
+    logging.info(f"Productivity percentage: {PRODUCTIVITY_PERCENTAGE}")
+    logging.info(f"Maintenance probability: {MAINTENANCE_PROBABILITY}")
+    logging.info(f"Breakdown probability: {BREAKDOWN_PROBABILITY}")
+    logging.info(f"Breakdown time: {BREAKDOWN_TIME} minutes")
+    logging.info(f"Maintenance time: {MAINTENANCE_TIME} minutes")
+    logging.info(f"Setup time: {SETUP_TIME} minutes")
+    logging.info(f"Simulation start: {SIMULATION_START}")
+    logging.info(f"Number of production lines: {NUM_LINES}")
+    logging.info("_" * 50)
+    logging.info("\n")
+
     # Run simulation
     env = simpy.Environment()
     env.process(production_simulation(env, NUM_LINES))
@@ -207,3 +230,6 @@ if __name__ == '__main__':
     logging.info("Shift-wise Production Logs:")
     for day, shift, production, downtime, line_id in shift_logs:
         logging.info(f"[Line {line_id}]: Day {day} Shift-{shift} {production:.2f} kg with {downtime:.2f} minutes downtime")
+    logging.info("Simulation completed.")
+    logging.info("_" * 50)
+    logging.info("\n")
