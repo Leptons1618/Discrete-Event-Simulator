@@ -87,7 +87,7 @@ def machine_maintenance(env, machine):
 # Introduce operator skill levels
 OPERATOR_SKILLS = [0.95, 0.85, 0.75]  # Skill multipliers for each shift
 
-def production_shift(env, shift_num, operator_productivity, machine, day_num, shift_in_day):
+def production_shift(env, operator_productivity, machine, day_num, shift_in_day):
     """Simulates a single production shift with operator skills"""
     global produced_kg, downtime_minutes  # Ensure downtime_minutes is global
 
@@ -169,7 +169,7 @@ def production_simulation(env):
         shift_in_day = get_shift(current_time)
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
         operator_productivity = PRODUCTIVITY_PERCENTAGE[(shift_in_day - 1) % SHIFTS_PER_DAY]
-        env.process(production_shift(env, shift_number, operator_productivity, resources['extruders'], day_num, shift_in_day))
+        env.process(production_shift(env, operator_productivity, resources['extruders'], day_num, shift_in_day))
         yield env.timeout(SHIFT_DURATIONS[shift_in_day - 1])  # Updated to use fixed shift durations
         shift_number += 1
 

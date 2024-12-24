@@ -67,25 +67,26 @@ def get_shift(current_time):
 # Dynamic maintenance probability based on machine usage
 def get_maintenance_probability():
     """Adjust maintenance probability based on production output."""
-    return min(0.1 + (produced_kg / 10000), 0.5)  # Cap at 50%
+    return min(0.05 + (produced_kg / 20000), 0.3)  # Cap at 30%
 
-def machine_maintenance(env, machine, line_id):
+def machine_maintenance(env, machine, line_id, resources):
     """Simulates machine breakdowns and maintenance"""
     global downtime_minutes
+    machine_name = [name for name, resource in resources.items() if resource == machine][0]
     while True:
-        yield env.timeout(random.expovariate(1 / 60))  # Random trigger for maintenance or breakdown
+        yield env.timeout(random.expovariate(1 / 240))  # Less frequent trigger for maintenance or breakdown
         maintenance_prob = get_maintenance_probability()
         breakdown_chance = random.random()
         current_time = get_current_time(env)
         if breakdown_chance < BREAKDOWN_PROBABILITY:
             repair_time = random.uniform(*BREAKDOWN_TIME)
             downtime_minutes += repair_time
-            logging.warning(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Machine breakdown! Repairing for {repair_time:.2f} minutes.")
+            logging.warning(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {machine_name} breakdown! Repairing for {repair_time:.2f} minutes.")
             yield env.timeout(repair_time)
         elif breakdown_chance < maintenance_prob:
             maintenance_time = random.uniform(*MAINTENANCE_TIME)
             downtime_minutes += maintenance_time
-            logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Scheduled maintenance for {maintenance_time:.2f} minutes.")
+            logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {machine_name} scheduled maintenance for {maintenance_time:.2f} minutes.")
             yield env.timeout(maintenance_time)
 
 # Introduce operator skill levels
@@ -107,7 +108,7 @@ def initialize_resources(num_lines):
         lines.append(resources)
     return lines
 
-def production_shift(env, line_id, shift_num, operator_productivity, machine, day_num, shift_in_day):
+def production_shift(env, line_id, operator_productivity, machine, day_num, shift_in_day):
     """Simulates a single production shift with operator skills"""
     global produced_kg, downtime_minutes  # Ensure downtime_minutes is global
 
@@ -165,13 +166,13 @@ def production_line(env, line_id, resources):
         (current_time.day - SIMULATION_START.day) * SHIFTS_PER_DAY
     ) + shift_in_day  # Initialize shift_number correctly based on the day
 
-    env.process(machine_maintenance(env, resources['extruders'], line_id))  # Pass line_id to maintenance
+    env.process(machine_maintenance(env, resources['extruders'], line_id, resources))  # Pass line_id to maintenance
 
     while produced_kg < ACTUAL_DEMAND:
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
         shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
         operator_productivity = PRODUCTIVITY_PERCENTAGE[(shift_number - 1) % SHIFTS_PER_DAY]
-        env.process(production_shift(env, line_id, shift_number, operator_productivity, resources['extruders'], day_num, shift_in_day))
+        env.process(production_shift(env, line_id, operator_productivity, resources['extruders'], day_num, shift_in_day))
         yield env.timeout(SHIFT_DURATIONS[shift_in_day - 1])  # Move to the next shift
         shift_number += 1
 
@@ -194,10 +195,14 @@ if __name__ == '__main__':
     # Log results
     supply_ready_time = SIMULATION_START + datetime.timedelta(minutes=env.now)
     days_to_meet_demand = (supply_ready_time - SIMULATION_START).days + 1
+    total_hours = env.now / 60
+    total_shifts = total_hours / (SHIFT_DURATIONS[0] / 60)
     logging.info("\nSimulation Results:")
     logging.info(f"Total production: {produced_kg:.2f} kg")
     logging.info(f"Total downtime: {downtime_minutes:.2f} minutes")
     logging.info(f"Days required to meet demand: {days_to_meet_demand} days")
+    logging.info(f"Total hours to meet demand: {total_hours:.2f} hours")
+    logging.info(f"Total shifts to meet demand: {total_shifts:.2f} shifts")
     logging.info(f"Supply will be ready by: {supply_ready_time.strftime('%Y-%m-%d %H:%M:%S')}")
     logging.info("Shift-wise Production Logs:")
     for day, shift, production, downtime, line_id in shift_logs:
