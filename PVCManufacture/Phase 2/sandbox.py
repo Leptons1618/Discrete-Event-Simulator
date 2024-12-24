@@ -12,9 +12,9 @@ parser.add_argument('--shifts_per_day', type=int, default=3, help='Number of shi
 parser.add_argument('--productivity_percentage', type=float, nargs='+', default=[0.9, 0.8, 0.7], help='Productivity of operators for each shift')
 parser.add_argument('--maintenance_probability', type=float, default=0.03, help='Probability of maintenance during a shift')
 parser.add_argument('--breakdown_probability', type=float, default=0.01, help='Probability of machine breakdown')
-parser.add_argument('--breakdown_time', type=float, nargs=2, default=[30, 60], help='Time to repair machine breakdown (minutes)')
-parser.add_argument('--maintenance_time', type=float, nargs=2, default=[20, 40], help='Time taken for scheduled maintenance (minutes)')
-parser.add_argument('--setup_time', type=int, default=40, help='Machine setup time in minutes')
+parser.add_argument('--breakdown_time', type=float, nargs=2, default=[60, 120], help='Time to repair machine breakdown (minutes)')  # Adjusted
+parser.add_argument('--maintenance_time', type=float, nargs=2, default=[30, 60], help='Time taken for scheduled maintenance (minutes)')  # Adjusted
+parser.add_argument('--setup_time', type=int, default=60, help='Machine setup time in minutes')  # Adjusted
 parser.add_argument('--simulation_start', type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d %H:%M'), default=datetime.datetime(2024, 12, 19, 13, 50), help='Simulation start datetime (YYYY-MM-DD HH:MM)')
 parser.add_argument('--num_lines', type=int, default=2, help='Number of production lines')
 args = parser.parse_args()
