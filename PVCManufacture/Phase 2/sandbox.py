@@ -67,7 +67,7 @@ def get_shift(current_time):
 # Dynamic maintenance probability based on machine usage
 def get_maintenance_probability():
     """Adjust maintenance probability based on production output."""
-    return min(0.05 + (produced_kg / 20000), 0.3)  # Cap at 30%
+    return min(MAINTENANCE_PROBABILITY + (produced_kg / 20000), 0.3)  # Cap at 30%
 
 def machine_maintenance(env, machine, line_id, resources):
     """Simulates machine breakdowns and maintenance"""
@@ -117,12 +117,6 @@ def production_shift(env, line_id, operator_productivity, machine, day_num, shif
     current_time = get_current_time(env)
     logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} starts (Effective Productivity: {effective_productivity * 100:.0f}%)")
 
-    # Machine setup
-    logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} setup started.")
-    yield env.timeout(SETUP_TIME)  # Machine setup time
-    setup_completed_time = get_current_time(env)
-    logging.info(f"[Line {line_id}] {setup_completed_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} setup completed.")
-
     shift_time = SHIFT_DURATIONS[shift_in_day - 1] * effective_productivity
     produced_this_shift = 0
     shift_downtime = 0  # Initialize shift downtime
@@ -165,6 +159,12 @@ def production_line(env, line_id, resources):
     shift_number = (
         (current_time.day - SIMULATION_START.day) * SHIFTS_PER_DAY
     ) + shift_in_day  # Initialize shift_number correctly based on the day
+
+    # Machine setup at the beginning of production
+    logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Initial machine setup started.")
+    yield env.timeout(SETUP_TIME)  # Machine setup time
+    setup_completed_time = get_current_time(env)
+    logging.info(f"[Line {line_id}] {setup_completed_time.strftime('%Y-%m-%d %H:%M:%S')}: Initial machine setup completed.")
 
     env.process(machine_maintenance(env, resources['extruders'], line_id, resources))  # Pass line_id to maintenance
 
