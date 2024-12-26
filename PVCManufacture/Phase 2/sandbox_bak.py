@@ -2,38 +2,35 @@ import simpy
 import random
 import logging
 import datetime
-import argparse
-import csv
+import argparse  # Import argparse module
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='PVC Manufacturing Simulation')
 parser.add_argument('--production_rate', type=float, default=100, help='PVC production rate in kg/hour')
 parser.add_argument('--actual_demand', type=float, default=5000, help='Actual demand for PVC in kg')
-parser.add_argument('--operator_productivity', type=float, nargs='+', default=[0.9, 0.8, 0.7], help='Productivity of operators for each shift')
+parser.add_argument('--shifts_per_day', type=int, default=3, help='Number of shifts per day')
+parser.add_argument('--productivity_percentage', type=float, nargs='+', default=[0.9, 0.8, 0.7], help='Productivity of operators for each shift')
+parser.add_argument('--maintenance_probability', type=float, default=0.03, help='Probability of maintenance during a shift')
 parser.add_argument('--breakdown_probability', type=float, default=0.01, help='Probability of machine breakdown')
-parser.add_argument('--breakdown_time', type=float, nargs=2, default=[60, 120], help='Time to repair machine breakdown (minutes)')
-parser.add_argument('--setup_time', type=int, default=60, help='Machine setup time in minutes')
-parser.add_argument('--changeover_time', type=int, default=30, help='Changeover time for every resource machine in minutes')
+parser.add_argument('--breakdown_time', type=float, nargs=2, default=[60, 120], help='Time to repair machine breakdown (minutes)')  # Adjusted
+parser.add_argument('--maintenance_time', type=float, nargs=2, default=[30, 60], help='Time taken for scheduled maintenance (minutes)')  # Adjusted
+parser.add_argument('--setup_time', type=int, default=60, help='Machine setup time in minutes')  # Adjusted
 parser.add_argument('--simulation_start', type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d %H:%M'), default=datetime.datetime(2024, 12, 19, 13, 50), help='Simulation start datetime (YYYY-MM-DD HH:MM)')
-parser.add_argument('--demand_delivery_date', type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d %H:%M'), default=datetime.datetime(2024, 12, 25, 0, 0), help='Demand delivery date (YYYY-MM-DD HH:MM)')
-parser.add_argument('--num_lines', type=int, default=1, help='Number of production lines')
-parser.add_argument('--maintenance_schedule_file', type=str, default='maintenance_schedule.csv', help='CSV file for maintenance schedule')
+parser.add_argument('--num_lines', type=int, default=2, help='Number of production lines')
 args = parser.parse_args()
 
 # Assign parsed arguments to variables
 PRODUCTION_RATE = args.production_rate
 ACTUAL_DEMAND = args.actual_demand
-OPERATOR_PRODUCTIVITY = args.operator_productivity
+SHIFTS_PER_DAY = args.shifts_per_day
+PRODUCTIVITY_PERCENTAGE = args.productivity_percentage
+MAINTENANCE_PROBABILITY = args.maintenance_probability
 BREAKDOWN_PROBABILITY = args.breakdown_probability
 BREAKDOWN_TIME = tuple(args.breakdown_time)
+MAINTENANCE_TIME = tuple(args.maintenance_time)
 SETUP_TIME = args.setup_time
-CHANGEOVER_TIME = args.changeover_time
 SIMULATION_START = args.simulation_start
-DEMAND_DELIVERY_DATE = args.demand_delivery_date
 NUM_LINES = args.num_lines
-MAINTENANCE_SCHEDULE_FILE = args.maintenance_schedule_file
-
-SHIFTS_PER_DAY = 3  # Static variable for shifts per day
 
 # Logging setup
 logging.basicConfig(
@@ -49,8 +46,6 @@ logging.basicConfig(
 produced_kg = 0
 downtime_minutes = 0
 shift_logs = []
-machine_utilization = {}
-operator_utilization = {shift: {hour: 0 for hour in range(24)} for shift in range(1, SHIFTS_PER_DAY + 1)}
 
 # Define static shift times and durations
 SHIFT_TIMES = [
@@ -76,12 +71,18 @@ def get_shift(current_time):
             return i
     return 1  # Default to Shift 1 if time does not match any shift
 
-def machine_maintenance(env, machine, line_id, resources, maintenance_schedule):
+# Dynamic maintenance probability based on machine usage
+def get_maintenance_probability():
+    """Adjust maintenance probability based on production output."""
+    return min(MAINTENANCE_PROBABILITY + (produced_kg / 20000), 0.3)  # Cap at 30%
+
+def machine_maintenance(env, machine, line_id, resources):
     """Simulates machine breakdowns and maintenance"""
     global downtime_minutes
     machine_name = [name for name, resource in resources.items() if resource == machine][0]
     while True:
-        yield env.timeout(random.expovariate(1 / 240))  # Less frequent trigger for breakdown
+        yield env.timeout(random.expovariate(1 / 240))  # Less frequent trigger for maintenance or breakdown
+        maintenance_prob = get_maintenance_probability()
         breakdown_chance = random.random()
         current_time = get_current_time(env)
         if breakdown_chance < BREAKDOWN_PROBABILITY:
@@ -89,26 +90,14 @@ def machine_maintenance(env, machine, line_id, resources, maintenance_schedule):
             downtime_minutes += repair_time
             logging.warning(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {machine_name} breakdown! Repairing for {repair_time:.2f} minutes.")
             yield env.timeout(repair_time)
-        else:
-            for schedule in maintenance_schedule:
-                if schedule['machine'] == machine_name and schedule['start_time'] <= current_time <= schedule['end_time']:
-                    maintenance_time = (schedule['end_time'] - schedule['start_time']).total_seconds() / 60
-                    downtime_minutes += maintenance_time
-                    logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {machine_name} scheduled maintenance for {maintenance_time:.2f} minutes.")
-                    yield env.timeout(maintenance_time)
+        elif breakdown_chance < maintenance_prob:
+            maintenance_time = random.uniform(*MAINTENANCE_TIME)
+            downtime_minutes += maintenance_time
+            logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {machine_name} scheduled maintenance for {maintenance_time:.2f} minutes.")
+            yield env.timeout(maintenance_time)
 
-def load_maintenance_schedule(file_path):
-    """Loads maintenance schedule from a CSV file."""
-    schedule = []
-    with open(file_path, 'r') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            schedule.append({
-                'machine': row['machine'],
-                'start_time': datetime.datetime.strptime(row['start_time'], '%Y-%m-%d %H:%M'),
-                'end_time': datetime.datetime.strptime(row['end_time'], '%Y-%m-%d %H:%M')
-            })
-    return schedule
+# Introduce operator skill levels
+OPERATOR_SKILLS = [0.95, 0.85, 0.75]  # Skill multipliers for each shift
 
 def initialize_resources(num_lines):
     """Initializes resources for each production line."""
@@ -120,39 +109,18 @@ def initialize_resources(num_lines):
             'cold_mixer': simpy.Resource(env, capacity=1),
             'hoppers': simpy.Resource(env, capacity=2),
             'extruders': simpy.Resource(env, capacity=2),
-            'cooling_station': simpy.Resource(env, capacity=2),
             'inspection_station': simpy.Resource(env, capacity=2),
             'printing_station': simpy.Resource(env, capacity=2)
         }
-        for resource_name, resource in resources.items():
-            env.process(changeover_time(env, resource, resource_name, line + 1))
         lines.append(resources)
     return lines
-
-def changeover_time(env, resource, resource_name, line_id):
-    """Simulates changeover time for each resource machine."""
-    changeover_times = {
-        'silos': 15,
-        'hot_mixer': 20,
-        'cold_mixer': 20,
-        'hoppers': 10,
-        'extruders': 30,
-        'cooling_station': 25,
-        'inspection_station': 15,
-        'printing_station': 20
-    }
-    while True:
-        yield resource.request()
-        logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover started.")
-        yield env.timeout(changeover_times[resource_name])
-        logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover completed.")
-        resource.release(resource.users[0])
 
 def production_shift(env, line_id, operator_productivity, machine, day_num, shift_in_day):
     """Simulates a single production shift with operator skills"""
     global produced_kg, downtime_minutes  # Ensure downtime_minutes is global
 
-    effective_productivity = operator_productivity
+    operator_skill = OPERATOR_SKILLS[(shift_in_day - 1) % SHIFTS_PER_DAY]
+    effective_productivity = operator_productivity * operator_skill
     current_time = get_current_time(env)
     logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} starts (Effective Productivity: {effective_productivity * 100:.0f}%)")
 
@@ -176,7 +144,6 @@ def production_shift(env, line_id, operator_productivity, machine, day_num, shif
             produced_amount = PRODUCTION_RATE * (production_time / 60)
             produced_kg += produced_amount
             produced_this_shift += produced_amount
-            operator_utilization[shift_in_day][current_time.hour] += production_time  # Track operator utilization
             logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Produced {produced_amount:.2f} kg this hour. Total produced: {produced_kg:.2f} kg.")
             if produced_kg >= ACTUAL_DEMAND:  # Stop production if demand is met
                 logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Desired demand reached.")
@@ -191,7 +158,7 @@ def production_shift(env, line_id, operator_productivity, machine, day_num, shif
         shift_logs.append((day_num, shift_in_day, produced_this_shift, shift_downtime, line_id))
         logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} ends. Produced {produced_this_shift:.2f} kg with {shift_downtime:.2f} minutes downtime.")
 
-def production_line(env, line_id, resources, maintenance_schedule):
+def production_line(env, line_id, resources):
     """Simulates production for a single line."""
     # Determine the starting shift based on SIMULATION_START
     current_time = get_current_time(env)
@@ -206,46 +173,43 @@ def production_line(env, line_id, resources, maintenance_schedule):
     setup_completed_time = get_current_time(env)
     logging.info(f"[Line {line_id}] {setup_completed_time.strftime('%Y-%m-%d %H:%M:%S')}: Initial machine setup completed.")
 
-    env.process(machine_maintenance(env, resources['extruders'], line_id, resources, maintenance_schedule))  # Pass line_id to maintenance
+    env.process(machine_maintenance(env, resources['extruders'], line_id, resources))  # Pass line_id to maintenance
 
     while produced_kg < ACTUAL_DEMAND:
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
         shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
-        operator_productivity = OPERATOR_PRODUCTIVITY[(shift_number - 1) % SHIFTS_PER_DAY]
+        operator_productivity = PRODUCTIVITY_PERCENTAGE[(shift_number - 1) % SHIFTS_PER_DAY]
         env.process(production_shift(env, line_id, operator_productivity, resources['extruders'], day_num, shift_in_day))
         yield env.timeout(SHIFT_DURATIONS[shift_in_day - 1])  # Move to the next shift
         shift_number += 1
 
-def production_simulation(env, num_lines, maintenance_schedule):
+def production_simulation(env, num_lines):
     """Manages the overall production process across multiple lines."""
     lines = initialize_resources(num_lines)
     for line_id, resources in enumerate(lines):
-        env.process(production_line(env, line_id + 1, resources, maintenance_schedule))
+        env.process(production_line(env, line_id + 1, resources))
     yield env.timeout(0)  # Ensure the function is a generator
 
 if __name__ == '__main__':
-
-    # Load maintenance schedule
-    maintenance_schedule = load_maintenance_schedule(MAINTENANCE_SCHEDULE_FILE)
-
     # Log simulation configuration
     logging.info("Simulation Configuration:")
     logging.info(f"Production rate: {PRODUCTION_RATE} kg/hour")
     logging.info(f"Actual demand: {ACTUAL_DEMAND} kg")
-    logging.info(f"Operator productivity: {OPERATOR_PRODUCTIVITY}")
+    logging.info(f"Shifts per day: {SHIFTS_PER_DAY}")
+    logging.info(f"Productivity percentage: {PRODUCTIVITY_PERCENTAGE}")
+    logging.info(f"Maintenance probability: {MAINTENANCE_PROBABILITY}")
     logging.info(f"Breakdown probability: {BREAKDOWN_PROBABILITY}")
     logging.info(f"Breakdown time: {BREAKDOWN_TIME} minutes")
+    logging.info(f"Maintenance time: {MAINTENANCE_TIME} minutes")
     logging.info(f"Setup time: {SETUP_TIME} minutes")
-    logging.info(f"Changeover time: {CHANGEOVER_TIME} minutes")
     logging.info(f"Simulation start: {SIMULATION_START}")
-    logging.info(f"Demand delivery date: {DEMAND_DELIVERY_DATE}")
     logging.info(f"Number of production lines: {NUM_LINES}")
     logging.info("_" * 50)
     logging.info("\n")
 
     # Run simulation
     env = simpy.Environment()
-    env.process(production_simulation(env, NUM_LINES, maintenance_schedule))
+    env.process(production_simulation(env, NUM_LINES))
     try:
         env.run()
     except simpy.core.StopSimulation as e:
@@ -269,19 +233,3 @@ if __name__ == '__main__':
     logging.info("Simulation completed.")
     logging.info("_" * 50)
     logging.info("\n")
-
-    # Calculate and log utilization metrics
-    if supply_ready_time <= DEMAND_DELIVERY_DATE:
-        logging.info("Demand satisfied within delivery date.")
-    else:
-        logging.info(f"Demand not satisfied within delivery date. Supply will be ready by: {supply_ready_time.strftime('%Y-%m-%d %H:%M:%S')}")
-
-    # Calculate operator and machine utilization
-    total_production_time = total_hours * 60  # Convert hours to minutes
-    operator_utilization_percent = {shift: {hour: (utilization / total_production_time) * 100 for hour, utilization in hours.items()} for shift, hours in operator_utilization.items()}
-    machine_utilization = (total_production_time - downtime_minutes) / total_production_time * 100
-
-    logging.info(f"Operator utilization: {operator_utilization_percent}")
-    logging.info(f"Machine utilization: {machine_utilization:.2f}%")
-    logging.info(f"Cycle time: {total_production_time / produced_kg:.2f} minutes/kg")
-    logging.info(f"Throughput: {produced_kg / total_hours:.2f} kg/hour")
