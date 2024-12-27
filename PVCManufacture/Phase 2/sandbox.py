@@ -9,13 +9,13 @@ import csv
 parser = argparse.ArgumentParser(description='PVC Manufacturing Simulation')
 parser.add_argument('--production_rate', type=float, default=100, help='PVC production rate in kg/hour')
 parser.add_argument('--actual_demand', type=float, default=5000, help='Actual demand for PVC in kg')
-parser.add_argument('--operator_productivity', type=float, nargs='+', default=[0.9, 0.8, 0.7], help='Productivity of operators for each shift')
+parser.add_argument('--operator_productivity', type=float, default=0.85, help='Productivity of operators')
 parser.add_argument('--breakdown_probability', type=float, default=0.01, help='Probability of machine breakdown')
 parser.add_argument('--breakdown_time', type=float, nargs=2, default=[60, 120], help='Time to repair machine breakdown (minutes)')
 parser.add_argument('--setup_time', type=int, default=60, help='Machine setup time in minutes')
-parser.add_argument('--changeover_time', type=int, default=30, help='Changeover time for every resource machine in minutes')
+parser.add_argument('--changeover_time', type=int, default=30, help='Changeover time for each machine in minutes')
 parser.add_argument('--simulation_start', type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d %H:%M'), default=datetime.datetime(2024, 12, 19, 13, 50), help='Simulation start datetime (YYYY-MM-DD HH:MM)')
-parser.add_argument('--demand_delivery_date', type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d %H:%M'), default=datetime.datetime(2024, 12, 25, 0, 0), help='Demand delivery date (YYYY-MM-DD HH:MM)')
+parser.add_argument('--demand_delivery_date', type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d %H:%M'), default=datetime.datetime(2024, 12, 25, 13, 50), help='Demand delivery date (YYYY-MM-DD HH:MM)')
 parser.add_argument('--num_lines', type=int, default=1, help='Number of production lines')
 parser.add_argument('--maintenance_schedule_file', type=str, default='maintenance_schedule.csv', help='CSV file for maintenance schedule')
 args = parser.parse_args()
@@ -110,7 +110,7 @@ def load_maintenance_schedule(file_path):
             })
     return schedule
 
-def initialize_resources(num_lines):
+def initialize_resources(env, num_lines):
     """Initializes resources for each production line."""
     lines = []
     for line in range(num_lines):
@@ -124,13 +124,11 @@ def initialize_resources(num_lines):
             'inspection_station': simpy.Resource(env, capacity=2),
             'printing_station': simpy.Resource(env, capacity=2)
         }
-        for resource_name, resource in resources.items():
-            env.process(changeover_time(env, resource, resource_name, line + 1))
         lines.append(resources)
     return lines
 
-def changeover_time(env, resource, resource_name, line_id):
-    """Simulates changeover time for each resource machine."""
+def perform_changeover(env, resource, resource_name, line_id):
+    """Simulates changeover time for each resource machine when needed."""
     changeover_times = {
         'silos': 15,
         'hot_mixer': 20,
@@ -141,12 +139,11 @@ def changeover_time(env, resource, resource_name, line_id):
         'inspection_station': 15,
         'printing_station': 20
     }
-    while True:
-        yield resource.request()
-        logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover started.")
-        yield env.timeout(changeover_times[resource_name])
-        logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover completed.")
-        resource.release(resource.users[0])
+    yield resource.request()
+    logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover started.")
+    yield env.timeout(changeover_times[resource_name])
+    logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover completed.")
+    resource.release(resource.users[0])
 
 def production_shift(env, line_id, operator_productivity, machine, day_num, shift_in_day):
     """Simulates a single production shift with operator skills"""
@@ -160,8 +157,14 @@ def production_shift(env, line_id, operator_productivity, machine, day_num, shif
     produced_this_shift = 0
     shift_downtime = 0  # Initialize shift downtime
 
+    # Trigger changeover at the start of the shift
+    if not (day_num == 1 and shift_in_day == 1):  # Skip changeover for the first shift after setup
+        for resource_name, resource in machine.items():
+            env.process(perform_changeover(env, resource, resource_name, line_id))
+        yield env.timeout(CHANGEOVER_TIME)  # Wait for changeover to complete
+
     while shift_time > 0 and produced_kg < ACTUAL_DEMAND:
-        with machine.request() as req:
+        with machine['extruders'].request() as req:
             yield req
             production_time = min(60, shift_time)  # Produce hour-by-hour
             downtime_before = downtime_minutes
@@ -211,14 +214,14 @@ def production_line(env, line_id, resources, maintenance_schedule):
     while produced_kg < ACTUAL_DEMAND:
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
         shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
-        operator_productivity = OPERATOR_PRODUCTIVITY[(shift_number - 1) % SHIFTS_PER_DAY]
-        env.process(production_shift(env, line_id, operator_productivity, resources['extruders'], day_num, shift_in_day))
+        operator_productivity = OPERATOR_PRODUCTIVITY
+        env.process(production_shift(env, line_id, operator_productivity, resources, day_num, shift_in_day))
         yield env.timeout(SHIFT_DURATIONS[shift_in_day - 1])  # Move to the next shift
         shift_number += 1
 
 def production_simulation(env, num_lines, maintenance_schedule):
     """Manages the overall production process across multiple lines."""
-    lines = initialize_resources(num_lines)
+    lines = initialize_resources(env, num_lines)
     for line_id, resources in enumerate(lines):
         env.process(production_line(env, line_id + 1, resources, maintenance_schedule))
     yield env.timeout(0)  # Ensure the function is a generator
@@ -285,3 +288,5 @@ if __name__ == '__main__':
     logging.info(f"Machine utilization: {machine_utilization:.2f}%")
     logging.info(f"Cycle time: {total_production_time / produced_kg:.2f} minutes/kg")
     logging.info(f"Throughput: {produced_kg / total_hours:.2f} kg/hour")
+    logging.info("_" * 50)
+    logging.info("\n")
