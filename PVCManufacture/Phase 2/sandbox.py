@@ -217,92 +217,82 @@ def production_shift(env, line_id, operator_productivity, machine, changeover_sc
     produced_this_shift = 0
     shift_downtime = 0
 
-    # Trigger changeover at the start of shift except for first shift
-    if not is_first_shift:
-        logging.info(f"[Line {line_id}] Checking changeovers at shift start")
-        for resource_name, resource in machine.items():
-            # Check if the current time falls within the changeover schedule
-            changeover = next((c for c in changeover_schedule if c['machine'] == resource_name 
-                            and 'start_time' in c 
-                            and c['start_time'] <= current_time <= c['end_time']), None)
-            if changeover:
-                env.process(perform_changeover(env, resource, resource_name, line_id, changeover_schedule))
-        yield env.timeout(1)  # Small delay to allow changeovers to start
+    # Calculate scheduled maintenance time for this shift
+    scheduled_maintenance_time = 0
+    for schedule in maintenance_schedule:
+        maintenance_start = schedule['start_time']
+        maintenance_end = schedule['end_time']
+        if (maintenance_start.date() == current_time.date() and 
+            SHIFT_TIMES[shift_in_day-1][0] <= maintenance_start.time() <= SHIFT_TIMES[shift_in_day-1][1]):
+            scheduled_maintenance_time += (maintenance_end - maintenance_start).total_seconds() / 60
 
-    # Calculate effective production time for the shift
-    effective_shift_time = shift_time * operator_productivity
+    # Calculate scheduled changeover time for this shift
+    scheduled_changeover_time = 0
+    for change in changeover_schedule:
+        # The start_time is already a datetime object, no need to parse it
+        changeover_start = change['start_time']
+        if (changeover_start.date() == current_time.date() and 
+            SHIFT_TIMES[shift_in_day-1][0] <= changeover_start.time() <= SHIFT_TIMES[shift_in_day-1][1]):
+            scheduled_changeover_time += float(change['changeover_time'])
+
+    # Calculate effective production time
+    available_time = shift_time - scheduled_maintenance_time - scheduled_changeover_time
+    effective_production_time = available_time * operator_productivity
     
-    remaining_time = effective_shift_time
+    # Process production in hourly intervals
+    remaining_time = effective_production_time
     while remaining_time > 0 and produced_kg < ACTUAL_DEMAND:
         with machine['extruders'].request() as req:
             yield req
-            production_time = min(60, remaining_time)  # Produce hour-by-hour
-            downtime_before = maintenance_downtime + changeover_downtime
+            production_time = min(60, remaining_time)
             
-            # Advance the simulation for production_time
+            # Advance simulation time
             yield env.timeout(production_time)
             remaining_time -= production_time
-            current_time = get_current_time(env)
             
-            # Calculate how much downtime happened during this time
-            downtime_after = maintenance_downtime + changeover_downtime
-            downtime_increment = downtime_after - downtime_before
-            if downtime_increment > 0:
-                shift_downtime += downtime_increment
-            
-            # Actual production time is total minus downtime
-            actual_production_time = production_time - downtime_increment
-            if actual_production_time < 0:
-                actual_production_time = 0
-            
-            # Produce only for the non-downtime portion
-            produced_amount = PRODUCTION_RATE * (actual_production_time / 60)
+            # Calculate production for this hour
+            produced_amount = PRODUCTION_RATE * (production_time / 60)
             produced_amount = round(produced_amount, 2)
             produced_kg += produced_amount
             produced_this_shift += produced_amount
-
-            # Log hourly production if we actually produced
-            if production_time == 60 and actual_production_time > 0:
-                logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Hourly production: {produced_amount:.0f} kg")
+            
+            current_time = get_current_time(env)
+            if production_time == 60:
+                logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Hourly production: {produced_amount:.2f} kg")
 
             if produced_kg >= ACTUAL_DEMAND:
-                # Update to include maintenance and changeover times
                 maintenance_in_shift = maintenance_downtime - shift_start_maintenance
                 changeover_in_shift = changeover_downtime - shift_start_changeover
-                total_shift_downtime = maintenance_in_shift + changeover_in_shift
                 
                 shift_logs.append((day_num, shift_in_day, round(produced_this_shift, 2), 
-                                 round(total_shift_downtime, 2), line_id,
-                                 round(maintenance_in_shift, 2),
+                                 round(scheduled_maintenance_time + scheduled_changeover_time, 2), 
+                                 line_id, round(maintenance_in_shift, 2),
                                  round(changeover_in_shift, 2)))
                 
-                logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Shift ended - Total produced: {produced_this_shift:.0f} kg")
-                if total_shift_downtime > 0:
+                if scheduled_maintenance_time + scheduled_changeover_time > 0:
                     logging.info(f"[Line {line_id}] Shift downtime breakdown:")
-                    if maintenance_in_shift > 0:
-                        logging.info(f"  - Maintenance: {format_time(maintenance_in_shift)}")
-                    if changeover_in_shift > 0:
-                        logging.info(f"  - Changeover: {format_time(changeover_in_shift)}")
-                logging.info(f"Total production reached: {produced_kg:.0f} kg")
+                    if scheduled_maintenance_time > 0:
+                        logging.info(f"  - Maintenance: {format_time(scheduled_maintenance_time)}")
+                    if scheduled_changeover_time > 0:
+                        logging.info(f"  - Changeover: {format_time(scheduled_changeover_time)}")
+                
+                logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Shift ended - Total produced: {produced_this_shift:.2f} kg")
+                logging.info(f"Total production reached: {produced_kg:.2f} kg")
                 raise simpy.core.StopSimulation("Desired demand reached.")
 
-    # Update shift summary with detailed downtime
-    maintenance_in_shift = maintenance_downtime - shift_start_maintenance
-    changeover_in_shift = changeover_downtime - shift_start_changeover
-    total_shift_downtime = maintenance_in_shift + changeover_in_shift
-
+    # Update shift logs at end of shift
     if produced_kg < ACTUAL_DEMAND:
         shift_logs.append((day_num, shift_in_day, round(produced_this_shift, 2), 
-                          round(total_shift_downtime, 2), line_id, 
-                          round(maintenance_in_shift, 2),
-                          round(changeover_in_shift, 2)))
+                          round(scheduled_maintenance_time + scheduled_changeover_time, 2), 
+                          line_id, round(scheduled_maintenance_time, 2),
+                          round(scheduled_changeover_time, 2)))
         
-        if total_shift_downtime > 0:
+        if scheduled_maintenance_time + scheduled_changeover_time > 0:
             logging.info(f"[Line {line_id}] Shift downtime breakdown:")
-            if maintenance_in_shift > 0:
-                logging.info(f"  - Maintenance: {format_time(maintenance_in_shift)}")
-            if changeover_in_shift > 0:
-                logging.info(f"  - Changeover: {format_time(changeover_in_shift)}")
+            if scheduled_maintenance_time > 0:
+                logging.info(f"  - Maintenance: {format_time(scheduled_maintenance_time)}")
+            if scheduled_changeover_time > 0:
+                logging.info(f"  - Changeover: {format_time(scheduled_changeover_time)}")
 
 def production_line(env, line_id, resources, maintenance_schedule, changeover_schedule):
     global setup_downtime
