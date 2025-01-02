@@ -92,33 +92,46 @@ def machine_maintenance(env, machine, line_id, resources, maintenance_schedule):
     """Simulates scheduled maintenance and random breakdowns separately."""
     global maintenance_downtime
     machine_name = [name for name, resource in resources.items() if resource == machine][0]
+    is_under_maintenance = False
+    
     while True:
-        # Check every minute instead of waiting for a random breakdown interval
-        yield env.timeout(1)
-        current_time = get_current_time(env)
-
-        # Scheduled maintenance check
-        for schedule in maintenance_schedule:
-            if schedule['machine'] == machine_name:
-                if schedule['start_time'] <= current_time <= schedule['end_time']:
-                    maintenance_time = (schedule['end_time'] - current_time).total_seconds() / 60
-                    maintenance_downtime += maintenance_time
-                    logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {machine_name} scheduled maintenance for {maintenance_time:.2f} minutes.")
-                    # Optionally request the resource to block production
-                    with machine.request() as req:
-                        yield req
-                        yield env.timeout(maintenance_time)
-                    break
-
-        # Random breakdown check
-        if random.random() < BREAKDOWN_PROBABILITY / 60:  # Adjust probability for 1-min increments
-            repair_time = random.uniform(*BREAKDOWN_TIME)
-            maintenance_downtime += repair_time
-            logging.warning(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {machine_name} breakdown! Repairing for {repair_time:.2f} minutes.")
-            # Optionally request the resource to block production
-            with machine.request() as req:
-                yield req
-                yield env.timeout(repair_time)
+        if not is_under_maintenance:
+            # Check every minute for scheduled maintenance
+            current_time = get_current_time(env)
+            
+            # Check scheduled maintenance
+            for schedule in maintenance_schedule:
+                if schedule['machine'] == machine_name:
+                    if schedule['start_time'] <= current_time <= schedule['end_time']:
+                        is_under_maintenance = True
+                        maintenance_time = (schedule['end_time'] - current_time).total_seconds() / 60
+                        maintenance_downtime += maintenance_time
+                        
+                        logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {machine_name} scheduled maintenance for {maintenance_time:.2f} minutes.")
+                        
+                        # Block the resource during maintenance
+                        with machine.request() as req:
+                            yield req
+                            yield env.timeout(maintenance_time)
+                        
+                        is_under_maintenance = False
+                        break
+            
+            # Check for random breakdowns only if not under maintenance
+            if not is_under_maintenance and random.random() < BREAKDOWN_PROBABILITY / 60:
+                is_under_maintenance = True
+                repair_time = random.uniform(*BREAKDOWN_TIME)
+                maintenance_downtime += repair_time
+                
+                logging.warning(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {machine_name} breakdown! Repairing for {repair_time:.2f} minutes.")
+                
+                with machine.request() as req:
+                    yield req
+                    yield env.timeout(repair_time)
+                
+                is_under_maintenance = False
+        
+        yield env.timeout(1)  # Check every minute
 
 def load_maintenance_schedule(file_path):
     """Loads maintenance schedule from a CSV file."""
@@ -215,16 +228,26 @@ def production_shift(env, line_id, operator_productivity, machine, changeover_sc
     logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Day {day_num} Shift-{shift_in_day} starts")
 
     produced_this_shift = 0
-    shift_downtime = 0
 
     # Calculate scheduled maintenance time for this shift
     scheduled_maintenance_time = 0
+    shift_start = current_time
+    shift_end = current_time + datetime.timedelta(minutes=shift_time)
+    
     for schedule in maintenance_schedule:
         maintenance_start = schedule['start_time']
         maintenance_end = schedule['end_time']
-        if (maintenance_start.date() == current_time.date() and 
-            SHIFT_TIMES[shift_in_day-1][0] <= maintenance_start.time() <= SHIFT_TIMES[shift_in_day-1][1]):
-            scheduled_maintenance_time += (maintenance_end - maintenance_start).total_seconds() / 60
+        
+        # Check if maintenance falls within current shift's time window
+        if (shift_start <= maintenance_start <= shift_end or 
+            shift_start <= maintenance_end <= shift_end or
+            (maintenance_start <= shift_start and maintenance_end >= shift_end)):
+            
+            # Calculate overlap duration
+            overlap_start = max(shift_start, maintenance_start)
+            overlap_end = min(shift_end, maintenance_end)
+            maintenance_duration = (overlap_end - overlap_start).total_seconds() / 60
+            scheduled_maintenance_time += maintenance_duration
 
     # Calculate scheduled changeover time for this shift
     scheduled_changeover_time = 0
