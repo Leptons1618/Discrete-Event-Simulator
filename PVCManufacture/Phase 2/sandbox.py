@@ -18,6 +18,7 @@ parser.add_argument('--simulation_start', type=lambda s: datetime.datetime.strpt
 parser.add_argument('--demand_delivery_date', type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d %H:%M'), default=datetime.datetime(2024, 12, 25, 13, 50), help='Demand delivery date (YYYY-MM-DD HH:MM)')
 parser.add_argument('--num_lines', type=int, default=1, help='Number of production lines')
 parser.add_argument('--maintenance_schedule_file', type=str, default='maintenance_schedule.csv', help='CSV file for maintenance schedule')
+parser.add_argument('--changeover_schedule_file', type=str, default='changeover_schedule.csv', help='CSV file for changeover schedule')
 args = parser.parse_args()
 
 # Assign parsed arguments to variables
@@ -32,6 +33,7 @@ SIMULATION_START = args.simulation_start
 DEMAND_DELIVERY_DATE = args.demand_delivery_date
 NUM_LINES = args.num_lines
 MAINTENANCE_SCHEDULE_FILE = args.maintenance_schedule_file
+CHANGEOVER_SCHEDULE_FILE = args.changeover_schedule_file
 
 SHIFTS_PER_DAY = 3  # Static variable for shifts per day
 
@@ -76,6 +78,16 @@ def get_shift(current_time):
         if start <= current_time_only <= end:
             return i
     return 1  # Default to Shift 1 if time does not match any shift
+
+def get_remaining_shift_time(current_time):
+    """Returns how many minutes remain in the current shift."""
+    shift_in_day = get_shift(current_time)
+    shift_start, shift_end = SHIFT_TIMES[shift_in_day - 1]
+    shift_end_dt = datetime.datetime.combine(current_time.date(), shift_end)
+    # Handle the 23:59 shift-end special case or when the shift ends next day
+    if shift_end_dt <= current_time:
+        shift_end_dt += datetime.timedelta(days=1)
+    return (shift_end_dt - current_time).total_seconds() / 60
 
 def machine_maintenance(env, machine, line_id, resources, maintenance_schedule):
     """Simulates scheduled maintenance and random breakdowns separately."""
@@ -123,8 +135,36 @@ def load_maintenance_schedule(file_path):
             })
     return schedule
 
-def initialize_resources(env, num_lines):
-    """Initializes resources for each production line."""
+def load_changeover_schedule(file_path):
+    """Loads changeover schedule from a CSV file."""
+    schedule = []
+    with open(file_path, 'r', encoding='utf-8') as file:
+        reader = csv.reader(file)
+        headers = next(reader)  # Read headers first
+        if len(headers) == 2:  # Old format
+            for row in reader:
+                try:
+                    schedule.append({
+                        'machine': row[0],
+                        'changeover_time': float(row[1])
+                    })
+                except ValueError:
+                    continue
+        else:  # New format with datetime
+            for row in reader:
+                try:
+                    schedule.append({
+                        'machine': row[0],
+                        'changeover_time': float(row[1]),
+                        'start_time': datetime.datetime.strptime(row[2], '%Y-%m-%d %H:%M'),
+                        'end_time': datetime.datetime.strptime(row[3], '%Y-%m-%d %H:%M')
+                    })
+                except (ValueError, IndexError):
+                    continue
+    return schedule
+
+def initialize_resources(env, num_lines, changeover_schedule):
+    """Initializes resources for each production line with changeover times."""
     lines = []
     for line in range(num_lines):
         resources = {
@@ -137,46 +177,58 @@ def initialize_resources(env, num_lines):
             'inspection_station': simpy.Resource(env, capacity=2),
             'printing_station': simpy.Resource(env, capacity=2)
         }
-        lines.append(resources)
+        lines.append({'resources': resources, 'changeover_schedule': changeover_schedule})
     return lines
 
-def perform_changeover(env, resource, resource_name, line_id):
+def perform_changeover(env, resource, resource_name, line_id, changeover_schedule):
     global downtime
-    """Simulates changeover time for each resource machine when needed."""
-    changeover_times = {
-        'silos': 15,
-        'hot_mixer': 20,
-        'cold_mixer': 20,
-        'hoppers': 10,
-        'extruders': 30,
-        'cooling_station': 25,
-        'inspection_station': 15,
-        'printing_station': 20
-    }
-    yield resource.request()
-    logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover started.")
-    yield env.timeout(changeover_times[resource_name])
-    downtime += changeover_times[resource_name]
-    logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover completed.")
-    resource.release(resource.users[0])
+    """Simulates changeover time for each resource machine based on the changeover schedule."""
+    current_time = get_current_time(env)
+    
+    # Find applicable changeover from schedule
+    try:
+        # Try new format with scheduled times
+        changeover = next((c for c in changeover_schedule if c['machine'] == resource_name 
+                        and 'start_time' in c 
+                        and c['start_time'] <= current_time <= c['end_time']), None)
+        
+        if changeover:
+            yield resource.request()
+            logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} scheduled changeover started.")
+            yield env.timeout(changeover['changeover_time'])
+            downtime += changeover['changeover_time']
+            logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover completed.")
+            resource.release(resource.users[0])
+            
+    except (KeyError, TypeError):
+        # Fallback to simple changeover time if schedule format is old
+        changeover_time = CHANGEOVER_TIME  # Use default changeover time
+        yield resource.request()
+        logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover started.")
+        yield env.timeout(changeover_time)
+        downtime += changeover_time
+        logging.info(f"[Line {line_id}] {get_current_time(env).strftime('%Y-%m-%d %H:%M:%S')}: {resource_name} changeover completed.")
+        resource.release(resource.users[0])
 
-def production_shift(env, line_id, operator_productivity, machine, day_num, shift_in_day):
-    """Simulates a single production shift with operator skills"""
-    global produced_kg, downtime  # Ensure downtime is global
-
+def production_shift(env, line_id, operator_productivity, machine, changeover_schedule, day_num, shift_in_day, partial_shift_time, is_first_shift):
+    """Simulates a single production shift with operator skills and handles changeovers."""
+    global produced_kg, downtime
     effective_productivity = operator_productivity
     current_time = get_current_time(env)
     logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} starts (Effective Productivity: {effective_productivity * 100:.0f}%)")
+    logging.info(f"[Line {line_id}] Partial shift time for Day {day_num} Shift-{shift_in_day}: {partial_shift_time:.2f} minutes")
 
-    shift_time = SHIFT_DURATIONS[shift_in_day - 1] * effective_productivity
+    shift_time = partial_shift_time * operator_productivity
+    logging.info(f"[Line {line_id}] Effective shift time after productivity ({operator_productivity*100:.0f}%): {shift_time:.2f} minutes")
+
     produced_this_shift = 0
-    shift_downtime = 0  # Initialize shift downtime
+    shift_downtime = 0
 
-    # Trigger changeover at the start of the shift
-    if not (day_num == 1 and shift_in_day == 1):  # Skip changeover for the first shift after setup
+    # Trigger changeover at the start of the shift except for the first shift
+    if not is_first_shift:
         for resource_name, resource in machine.items():
-            env.process(perform_changeover(env, resource, resource_name, line_id))
-        yield env.timeout(CHANGEOVER_TIME)  # Wait for changeover to complete
+            env.process(perform_changeover(env, resource, resource_name, line_id, changeover_schedule))
+        yield env.timeout(1)  # Small delay to allow changeovers to start
 
     while shift_time > 0 and produced_kg < ACTUAL_DEMAND:
         with machine['extruders'].request() as req:
@@ -209,9 +261,9 @@ def production_shift(env, line_id, operator_productivity, machine, day_num, shif
         shift_logs.append((day_num, shift_in_day, produced_this_shift, shift_downtime, line_id))
         logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Day {day_num} Shift-{shift_in_day} ends. Produced {produced_this_shift:.2f} kg with {shift_downtime:.2f} minutes downtime.")
 
-def production_line(env, line_id, resources, maintenance_schedule):
+def production_line(env, line_id, resources, maintenance_schedule, changeover_schedule):
     global downtime
-    """Simulates production for a single line."""
+    """Simulates production for a single line with correct shift mapping."""
     # Determine the starting shift based on SIMULATION_START
     current_time = get_current_time(env)
     shift_in_day = get_shift(current_time)
@@ -219,29 +271,46 @@ def production_line(env, line_id, resources, maintenance_schedule):
         (current_time.day - SIMULATION_START.day) * SHIFTS_PER_DAY
     ) + shift_in_day  # Initialize shift_number correctly based on the day
 
+    # Calculate remaining time in the current shift
+    remaining_shift_time = get_remaining_shift_time(current_time)
+    # Allocate setup time within the remaining shift time
+    setup_time = SETUP_TIME
+    production_time_shift = remaining_shift_time - setup_time
+
+    if production_time_shift < 0:
+        logging.error(f"[Line {line_id}] Not enough time for setup in the initial shift.")
+        raise ValueError("Setup time exceeds the remaining shift time.")
+
     # Machine setup at the beginning of production
     logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Initial machine setup started.")
-    yield env.timeout(SETUP_TIME)  # Machine setup time
-    downtime += SETUP_TIME
+    yield env.timeout(setup_time)  # Machine setup time
+    downtime += setup_time
     setup_completed_time = get_current_time(env)
     logging.info(f"[Line {line_id}] {setup_completed_time.strftime('%Y-%m-%d %H:%M:%S')}: Initial machine setup completed.")
 
     for resource_name, resource in resources.items():
         env.process(machine_maintenance(env, resource, line_id, resources, maintenance_schedule))  # Pass line_id to maintenance
 
+    # Start the first production_shift with is_first_shift=True
+    env.process(production_shift(env, line_id, OPERATOR_PRODUCTIVITY, resources, changeover_schedule, 1, shift_in_day, production_time_shift, is_first_shift=True))
+    yield env.timeout(production_time_shift)  # Move simulation time to the end of this partial shift
+    shift_number += 1
+
     while produced_kg < ACTUAL_DEMAND:
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
         shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
         operator_productivity = OPERATOR_PRODUCTIVITY
-        env.process(production_shift(env, line_id, operator_productivity, resources, day_num, shift_in_day))
-        yield env.timeout(SHIFT_DURATIONS[shift_in_day - 1])  # Move to the next shift
+        partial_shift_time = SHIFT_DURATIONS[shift_in_day - 1]
+
+        env.process(production_shift(env, line_id, operator_productivity, resources, changeover_schedule, day_num, shift_in_day, partial_shift_time, is_first_shift=False))
+        yield env.timeout(partial_shift_time)  # Move simulation time to the end of this partial shift
         shift_number += 1
 
-def production_simulation(env, num_lines, maintenance_schedule):
+def production_simulation(env, num_lines, maintenance_schedule, changeover_schedule):
     """Manages the overall production process across multiple lines."""
-    lines = initialize_resources(env, num_lines)
+    lines = initialize_resources(env, num_lines, changeover_schedule)
     for line_id, resources in enumerate(lines):
-        env.process(production_line(env, line_id + 1, resources, maintenance_schedule))
+        env.process(production_line(env, line_id + 1, resources['resources'], maintenance_schedule, changeover_schedule))
     yield env.timeout(0)  # Ensure the function is a generator
 
 def format_time(minutes):
@@ -257,6 +326,8 @@ if __name__ == '__main__':
 
     # Load maintenance schedule
     maintenance_schedule = load_maintenance_schedule(MAINTENANCE_SCHEDULE_FILE)
+    # Load changeover schedule
+    changeover_schedule = load_changeover_schedule(CHANGEOVER_SCHEDULE_FILE)
 
     # Log simulation configuration
     logging.info("Simulation Configuration:")
@@ -275,7 +346,7 @@ if __name__ == '__main__':
 
     # Run simulation
     env = simpy.Environment()
-    env.process(production_simulation(env, NUM_LINES, maintenance_schedule))
+    env.process(production_simulation(env, NUM_LINES, maintenance_schedule, changeover_schedule))
     try:
         env.run()
     except simpy.core.StopSimulation as e:
