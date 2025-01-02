@@ -238,23 +238,31 @@ def production_shift(env, line_id, operator_productivity, machine, changeover_sc
             yield req
             production_time = min(60, remaining_time)  # Produce hour-by-hour
             downtime_before = maintenance_downtime + changeover_downtime
+            
+            # Advance the simulation for production_time
             yield env.timeout(production_time)
             remaining_time -= production_time
             current_time = get_current_time(env)
             
-            if (maintenance_downtime + changeover_downtime) > downtime_before:  # Machine downtime occurred
-                downtime_increment = (maintenance_downtime + changeover_downtime) - downtime_before
+            # Calculate how much downtime happened during this time
+            downtime_after = maintenance_downtime + changeover_downtime
+            downtime_increment = downtime_after - downtime_before
+            if downtime_increment > 0:
                 shift_downtime += downtime_increment
-                logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Downtime: {downtime_increment:.0f} minutes")
-                continue
-                
-            produced_amount = PRODUCTION_RATE * (production_time / 60)
-            produced_amount = round(produced_amount, 2)  # Round to 2 decimal places
+            
+            # Actual production time is total minus downtime
+            actual_production_time = production_time - downtime_increment
+            if actual_production_time < 0:
+                actual_production_time = 0
+            
+            # Produce only for the non-downtime portion
+            produced_amount = PRODUCTION_RATE * (actual_production_time / 60)
+            produced_amount = round(produced_amount, 2)
             produced_kg += produced_amount
             produced_this_shift += produced_amount
-            
-            # Only log hourly production
-            if production_time == 60:
+
+            # Log hourly production if we actually produced
+            if production_time == 60 and actual_production_time > 0:
                 logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Hourly production: {produced_amount:.0f} kg")
 
             if produced_kg >= ACTUAL_DEMAND:
