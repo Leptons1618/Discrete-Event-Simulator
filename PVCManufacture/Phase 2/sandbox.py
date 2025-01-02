@@ -55,16 +55,15 @@ machine_utilization = {}
 operator_utilization = {shift: {hour: 0 for hour in range(24)} for shift in range(1, SHIFTS_PER_DAY + 1)}
 
 # Define static shift times and durations
+SHIFT_DURATION_MINUTES = 480  # 8 hours = 480 minutes
 SHIFT_TIMES = [
-    (datetime.time(0, 0), datetime.time(8, 0)),  # Shift 1: 12am to 8am
-    (datetime.time(8, 0), datetime.time(16, 0)), # Shift 2: 8am to 4pm
-    (datetime.time(16, 0), datetime.time(23, 59)) # Shift 3: 4pm to 11:59pm
+    (datetime.time(0, 0), datetime.time(8, 0)),   # Shift 1: 12am to 8am
+    (datetime.time(8, 0), datetime.time(16, 0)),  # Shift 2: 8am to 4pm
+    (datetime.time(16, 0), datetime.time(0, 0))   # Shift 3: 4pm to 12am
 ]
 
-SHIFT_DURATIONS = [
-    (datetime.datetime.combine(datetime.date.today(), end) - datetime.datetime.combine(datetime.date.today(), start)).total_seconds() / 60
-    for start, end in SHIFT_TIMES
-]
+# Calculate shift durations in minutes
+SHIFT_DURATIONS = [SHIFT_DURATION_MINUTES] * 3  # All shifts are 8 hours (480 minutes)
 
 def get_current_time(env):
     """Returns the current simulation time as a datetime object."""
@@ -78,15 +77,26 @@ def get_shift(current_time):
             return i
     return 1  # Default to Shift 1 if time does not match any shift
 
+def get_shift_duration(shift_in_day, is_first_shift=False):
+    """Calculate shift duration in minutes."""
+    if is_first_shift:
+        return get_remaining_shift_time(SIMULATION_START)
+    return SHIFT_DURATION_MINUTES  # All regular shifts are 8 hours
+
 def get_remaining_shift_time(current_time):
     """Returns how many minutes remain in the current shift."""
     shift_in_day = get_shift(current_time)
     shift_start, shift_end = SHIFT_TIMES[shift_in_day - 1]
-    shift_end_dt = datetime.datetime.combine(current_time.date(), shift_end)
-    # Handle the 23:59 shift-end special case or when the shift ends next day
-    if shift_end_dt <= current_time:
-        shift_end_dt += datetime.timedelta(days=1)
-    return (shift_end_dt - current_time).total_seconds() / 60
+    
+    # For shift 3, handle midnight crossing
+    if shift_in_day == 3:
+        next_day = current_time.date() + datetime.timedelta(days=1)
+        shift_end_dt = datetime.datetime.combine(next_day, datetime.time(0, 0))
+    else:
+        shift_end_dt = datetime.datetime.combine(current_time.date(), shift_end)
+    
+    remaining = (shift_end_dt - current_time).total_seconds() / 60
+    return max(0, remaining)  # Ensure we don't return negative time
 
 def machine_maintenance(env, machine, line_id, resources, maintenance_schedule):
     """Simulates scheduled maintenance and random breakdowns separately."""
@@ -220,6 +230,9 @@ def production_shift(env, line_id, operator_productivity, machine, changeover_sc
     """Simulates a single production shift with operator skills and handles changeovers."""
     global produced_kg, maintenance_downtime, changeover_downtime, setup_downtime
     current_time = get_current_time(env)
+    demand_reached_time = None
+    demand_reached_production = None
+    shift_completed = False
     
     # Track downtime at start of shift
     shift_start_maintenance = maintenance_downtime
@@ -264,7 +277,7 @@ def production_shift(env, line_id, operator_productivity, machine, changeover_sc
     
     # Process production in hourly intervals
     remaining_time = effective_production_time
-    while remaining_time > 0 and produced_kg < ACTUAL_DEMAND:
+    while remaining_time > 0:  # Continue until shift ends
         with machine['extruders'].request() as req:
             yield req
             production_time = min(60, remaining_time)
@@ -283,39 +296,33 @@ def production_shift(env, line_id, operator_productivity, machine, changeover_sc
             if production_time == 60:
                 logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Hourly production: {produced_amount:.2f} kg")
 
-            if produced_kg >= ACTUAL_DEMAND:
-                maintenance_in_shift = maintenance_downtime - shift_start_maintenance
-                changeover_in_shift = changeover_downtime - shift_start_changeover
-                
-                shift_logs.append((day_num, shift_in_day, round(produced_this_shift, 2), 
-                                 round(scheduled_maintenance_time + scheduled_changeover_time, 2), 
-                                 line_id, round(maintenance_in_shift, 2),
-                                 round(changeover_in_shift, 2)))
-                
-                if scheduled_maintenance_time + scheduled_changeover_time > 0:
-                    logging.info(f"[Line {line_id}] Shift downtime breakdown:")
-                    if scheduled_maintenance_time > 0:
-                        logging.info(f"  - Maintenance: {format_time(scheduled_maintenance_time)}")
-                    if scheduled_changeover_time > 0:
-                        logging.info(f"  - Changeover: {format_time(scheduled_changeover_time)}")
-                
-                logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Shift ended - Total produced: {produced_this_shift:.2f} kg")
-                logging.info(f"Total production reached: {produced_kg:.2f} kg")
-                raise simpy.core.StopSimulation("Desired demand reached.")
+            # Log when demand is first reached
+            if not demand_reached_time and produced_kg >= ACTUAL_DEMAND:
+                demand_reached_time = current_time
+                demand_reached_production = produced_kg
+                logging.info(f"\nDemand of {ACTUAL_DEMAND} kg reached at: {demand_reached_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                logging.info(f"Production at demand point: {demand_reached_production:.2f} kg")
+                logging.info(f"Total downtime so far: {format_time(maintenance_downtime + changeover_downtime + setup_downtime)}\n")
+                logging.info("Continuing production until end of current shift...\n")
 
     # Update shift logs at end of shift
-    if produced_kg < ACTUAL_DEMAND:
-        shift_logs.append((day_num, shift_in_day, round(produced_this_shift, 2), 
-                          round(scheduled_maintenance_time + scheduled_changeover_time, 2), 
-                          line_id, round(scheduled_maintenance_time, 2),
-                          round(scheduled_changeover_time, 2)))
-        
-        if scheduled_maintenance_time + scheduled_changeover_time > 0:
-            logging.info(f"[Line {line_id}] Shift downtime breakdown:")
-            if scheduled_maintenance_time > 0:
-                logging.info(f"  - Maintenance: {format_time(scheduled_maintenance_time)}")
-            if scheduled_changeover_time > 0:
-                logging.info(f"  - Changeover: {format_time(scheduled_changeover_time)}")
+    shift_logs.append((day_num, shift_in_day, round(produced_this_shift, 2), 
+                      round(scheduled_maintenance_time + scheduled_changeover_time, 2), 
+                      line_id, round(scheduled_maintenance_time, 2),
+                      round(scheduled_changeover_time, 2)))
+    
+    # Log shift completion
+    logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M')}: Shift ended - Total produced in shift: {produced_this_shift:.2f} kg")
+    if scheduled_maintenance_time + scheduled_changeover_time > 0:
+        logging.info(f"[Line {line_id}] Shift downtime breakdown:")
+        if scheduled_maintenance_time > 0:
+            logging.info(f"  - Maintenance: {format_time(scheduled_maintenance_time)}")
+        if scheduled_changeover_time > 0:
+            logging.info(f"  - Changeover: {format_time(scheduled_changeover_time)}")
+
+    # If this is the shift where demand was met, stop simulation after shift ends
+    if demand_reached_time and current_time.date() >= demand_reached_time.date():
+        raise simpy.core.StopSimulation("Shift completed after reaching demand")
 
 def production_line(env, line_id, resources, maintenance_schedule, changeover_schedule):
     global setup_downtime
@@ -355,8 +362,10 @@ def production_line(env, line_id, resources, maintenance_schedule, changeover_sc
     while produced_kg < ACTUAL_DEMAND:
         day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
         shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
-        operator_productivity = OPERATOR_PRODUCTIVITY
-        partial_shift_time = SHIFT_DURATIONS[shift_in_day - 1]
+        if shift_in_day == 0:
+            shift_in_day = 3
+            
+        shift_time = SHIFT_DURATION_MINUTES  # All regular shifts are 8 hours
 
         # Check if the current time falls within the changeover schedule
         current_time = get_current_time(env)
@@ -364,8 +373,8 @@ def production_line(env, line_id, resources, maintenance_schedule, changeover_sc
         if changeover:
             env.process(perform_changeover(env, resources[changeover['machine']], changeover['machine'], line_id, changeover_schedule))
 
-        env.process(production_shift(env, line_id, operator_productivity, resources, changeover_schedule, day_num, shift_in_day, partial_shift_time, is_first_shift=False))
-        yield env.timeout(partial_shift_time)  # Move simulation time to the end of this partial shift
+        env.process(production_shift(env, line_id, OPERATOR_PRODUCTIVITY, resources, changeover_schedule, day_num, shift_in_day, shift_time, is_first_shift=False))
+        yield env.timeout(shift_time)  # Move simulation time to the end of this partial shift
         shift_number += 1
 
 def production_simulation(env, num_lines, maintenance_schedule, changeover_schedule):
@@ -410,17 +419,22 @@ if __name__ == '__main__':
     env.process(production_simulation(env, NUM_LINES, maintenance_schedule, changeover_schedule))
     try:
         env.run()
-    except simpy.core.StopSimulation as e:
-        logging.info(f"Simulation stopped: {str(e)}")
+    except simpy.core.StopSimulation:
+        pass  # Normal termination when demand is reached
 
     # Log results
     supply_ready_time = SIMULATION_START + datetime.timedelta(minutes=env.now)
     days_to_meet_demand = (supply_ready_time - SIMULATION_START).days + 1
     total_hours = env.now / 60
-    total_shifts = total_hours / (SHIFT_DURATIONS[0] / 60)
-    logging.info("\nSimulation Results:")
-    logging.info(f"Total production: {produced_kg:.2f} kg")
+    total_shifts = total_hours / (SHIFT_DURATION_MINUTES / 60)
+    
+    logging.info("\nFinal Simulation Results:")
+    logging.info(f"Total production: {produced_kg:.2f} kg (Target: {ACTUAL_DEMAND:.2f} kg)")
+    logging.info(f"Excess production: {produced_kg - ACTUAL_DEMAND:.2f} kg")
     logging.info(f"Total maintenance time: {format_time(maintenance_downtime)}")
+    logging.info(f"Total changeover time: {format_time(changeover_downtime)}")
+    logging.info(f"Total setup time: {format_time(setup_downtime)}")
+    logging.info(f"Total downtime: {format_time(maintenance_downtime + changeover_downtime + setup_downtime)}")
 
     # Calculate and log shift vs. non-shift downtime
     shift_downtime_sum = sum(x[3] for x in shift_logs)
