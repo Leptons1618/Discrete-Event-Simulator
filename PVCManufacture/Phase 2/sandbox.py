@@ -470,6 +470,8 @@ if __name__ == '__main__':
     machine_utilization = ((total_production_time - total_downtime) / total_production_time) * 100
 
     logging.info(f"Machine utilization: {machine_utilization:.2f}%")
+    logging.info(f"Total Production Time: {format_time(total_production_time)}")
+    logging.info(f"Produced {produced_kg:.2f} kg in {total_hours:.2f} hours")
     logging.info(f"Cycle time: {total_production_time / produced_kg:.2f} minutes/kg")
     logging.info(f"Throughput: {produced_kg / total_hours:.2f} kg/hour")
     logging.info("_" * 50)
