@@ -22,10 +22,10 @@ class CuttingProcess(ManufacturingProcess):
         self.cut_length = cut_length
         self.cut_tolerance = 0.01  # 1% tolerance
         
-    async def process_logic(self, env, resources):
+    def process_logic(self, env, resources):
         try:
             # Simulate cutting process
-            yield env.timeout(self.params.duration)
+            env.timeout(self.params.duration)
             
             # Quality check - length within tolerance
             actual_length = random.gauss(self.cut_length, self.cut_tolerance)

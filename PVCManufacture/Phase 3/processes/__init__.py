@@ -1,10 +1,9 @@
-from .base_process import ManufacturingProcess, ProcessParameters
-from .mixing import MixingProcess
-from .extrusion import ExtrusionProcess
-from .cooling import CoolingProcess
-from .cutting import CuttingProcess
-from .printing import PrintingProcess
-from .inspection import InspectionProcess
+from processes.base_process import ManufacturingProcess, ProcessParameters
+from processes.mixing import MixingProcess
+from processes.extrusion import ExtrusionProcess
+from processes.cooling import CoolingProcess
+from processes.cutting import CuttingProcess
+from processes.inspection import InspectionProcess
 
 __all__ = [
     'ManufacturingProcess',
@@ -13,6 +12,5 @@ __all__ = [
     'ExtrusionProcess',
     'CoolingProcess',
     'CuttingProcess',
-    'PrintingProcess',
     'InspectionProcess'
 ]

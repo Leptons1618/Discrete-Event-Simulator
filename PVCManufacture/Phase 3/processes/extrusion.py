@@ -1,5 +1,5 @@
-from .base_process import ManufacturingProcess, ProcessParameters
-from ..utils.constants import PROCESS_PARAMETERS
+from processes.base_process import ManufacturingProcess, ProcessParameters
+from utils.constants import PROCESS_PARAMETERS
 import random
 
 class ExtrusionProcess(ManufacturingProcess):
