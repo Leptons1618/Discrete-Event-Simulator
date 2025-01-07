@@ -190,15 +190,20 @@ def initialize_resources(env, num_lines, changeover_schedule):
     for line in range(num_lines):
         resources = {
             'silos': simpy.Resource(env, capacity=1),
-            'hot_mixer': simpy.Resource(env, capacity=1),
-            'cold_mixer': simpy.Resource(env, capacity=1),
-            'hoppers': simpy.Resource(env, capacity=2),
-            'extruders': simpy.Resource(env, capacity=2),
+            'mixer': simpy.Resource(env, capacity=1),
+            'extruder': simpy.Resource(env, capacity=2),
             'cooling_station': simpy.Resource(env, capacity=2),
-            'inspection_station': simpy.Resource(env, capacity=2),
-            'printing_station': simpy.Resource(env, capacity=2)
+            'inspection_station': simpy.Resource(env, capacity=2)
         }
-        lines.append({'resources': resources, 'changeover_schedule': changeover_schedule})
+        processes = {
+            'mixing': MixingProcess(),
+            'extrusion': ExtrusionProcess()
+        }
+        lines.append({
+            'resources': resources, 
+            'processes': processes,
+            'changeover_schedule': changeover_schedule
+        })
     return lines
 
 def perform_changeover(env, resource, resource_name, line_id, changeover_schedule):
@@ -324,64 +329,25 @@ def production_shift(env, line_id, operator_productivity, machine, changeover_sc
     if demand_reached_time and current_time.date() >= demand_reached_time.date():
         raise simpy.core.StopSimulation("Shift completed after reaching demand")
 
-def production_line(env, line_id, resources, maintenance_schedule, changeover_schedule):
-    global setup_downtime
-    """Simulates production for a single line with correct shift mapping."""
-    # Determine the starting shift based on SIMULATION_START
-    current_time = get_current_time(env)
-    shift_in_day = get_shift(current_time)
-    shift_number = (
-        (current_time.day - SIMULATION_START.day) * SHIFTS_PER_DAY
-    ) + shift_in_day  # Initialize shift_number correctly based on the day
-
-    # Calculate remaining time in the current shift
-    remaining_shift_time = get_remaining_shift_time(current_time)
-    # Allocate setup time within the remaining shift time
-    setup_time = SETUP_TIME
-    production_time_shift = remaining_shift_time - setup_time
-
-    if production_time_shift < 0:
-        logging.error(f"[Line {line_id}] Not enough time for setup in the initial shift.")
-        raise ValueError("Setup time exceeds the remaining shift time.")
-
-    # Machine setup at the beginning of production
-    logging.info(f"[Line {line_id}] {current_time.strftime('%Y-%m-%d %H:%M:%S')}: Initial machine setup started.")
-    yield env.timeout(setup_time)  # Machine setup time
-    setup_downtime += setup_time
-    setup_completed_time = get_current_time(env)
-    logging.info(f"[Line {line_id}] {setup_completed_time.strftime('%Y-%m-%d %H:%M:%S')}: Initial machine setup completed.")
-
-    for resource_name, resource in resources.items():
-        env.process(machine_maintenance(env, resource, line_id, resources, maintenance_schedule))  # Pass line_id to maintenance
-
-    # Start the first production_shift with is_first_shift=True
-    env.process(production_shift(env, line_id, OPERATOR_PRODUCTIVITY, resources, changeover_schedule, 1, shift_in_day, production_time_shift, is_first_shift=True))
-    yield env.timeout(production_time_shift)  # Move simulation time to the end of this partial shift
-    shift_number += 1
-
+def production_line(env, line_id, resources, processes, maintenance_schedule, changeover_schedule):
+    """Updated production line with process management"""
     while produced_kg < ACTUAL_DEMAND:
-        day_num = (shift_number - 1) // SHIFTS_PER_DAY + 1
-        shift_in_day = (shift_number - 1) % SHIFTS_PER_DAY + 1
-        if shift_in_day == 0:
-            shift_in_day = 3
+        # Execute processes in sequence
+        for process_name, process in processes.items():
+            logging.info(f"[Line {line_id}] Starting {process_name} process")
+            yield env.process(process.execute(env, resources))
+            current_time = get_current_time(env)
+            logging.info(f"[Line {line_id}] Completed {process_name} process at {current_time}")
             
-        shift_time = SHIFT_DURATION_MINUTES  # All regular shifts are 8 hours
-
-        # Check if the current time falls within the changeover schedule
-        current_time = get_current_time(env)
-        changeover = next((c for c in changeover_schedule if c['start_time'] <= current_time <= c['end_time']), None)
-        if changeover:
-            env.process(perform_changeover(env, resources[changeover['machine']], changeover['machine'], line_id, changeover_schedule))
-
-        env.process(production_shift(env, line_id, OPERATOR_PRODUCTIVITY, resources, changeover_schedule, day_num, shift_in_day, shift_time, is_first_shift=False))
-        yield env.timeout(shift_time)  # Move simulation time to the end of this partial shift
-        shift_number += 1
+        # Calculate production after process sequence
+        produced_amount = PRODUCTION_RATE * (SHIFT_DURATION_MINUTES / 60)
+        produced_kg += produced_amount
 
 def production_simulation(env, num_lines, maintenance_schedule, changeover_schedule):
     """Manages the overall production process across multiple lines."""
     lines = initialize_resources(env, num_lines, changeover_schedule)
     for line_id, resources in enumerate(lines):
-        env.process(production_line(env, line_id + 1, resources['resources'], maintenance_schedule, changeover_schedule))
+        env.process(production_line(env, line_id + 1, resources['resources'], resources['processes'], maintenance_schedule, changeover_schedule))
     yield env.timeout(0)  # Ensure the function is a generator
 
 def format_time(minutes):

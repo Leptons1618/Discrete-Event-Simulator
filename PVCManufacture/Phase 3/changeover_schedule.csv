@@ -1,0 +1,4 @@
+machine,changeover_time,start_time,end_time
+extruder,45,2024-01-01 15:00,2024-01-01 15:45
+mixer,30,2024-01-02 08:00,2024-01-02 08:30
+cooling_station,60,2024-01-03 14:00,2024-01-03 15:00
