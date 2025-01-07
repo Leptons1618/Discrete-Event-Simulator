@@ -1,5 +1,5 @@
-from .base_process import ManufacturingProcess, ProcessParameters
-from ..utils.constants import PROCESS_PARAMETERS
+from processes.base_process import ManufacturingProcess, ProcessParameters
+from utils.constants import PROCESS_PARAMETERS
 import random
 
 class CuttingProcess(ManufacturingProcess):
@@ -25,7 +25,7 @@ class CuttingProcess(ManufacturingProcess):
     def process_logic(self, env, resources):
         try:
             # Simulate cutting process
-            env.timeout(self.params.duration)
+            yield env.timeout(self.params.duration)
             
             # Quality check - length within tolerance
             actual_length = random.gauss(self.cut_length, self.cut_tolerance)

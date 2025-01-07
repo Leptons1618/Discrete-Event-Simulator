@@ -16,21 +16,6 @@ class ExtrusionProcess(ManufacturingProcess):
         self.die_diameter = die_diameter
         self.diameter_tolerance = 0.02  # 2% tolerance
         
-    async def execute(self, env, resources):
-        self.state = "starting"
-        try:
-            requests = await self._request_resources(env, resources)
-            yield env.all_of(requests)
-            self.state = "running"
-            
-            result = await self.process_logic(env, resources)
-            self.state = "completed" if result else "failed"
-            return result
-            
-        except Exception as e:
-            self.state = "failed"
-            return False
-
     def process_logic(self, env, resources):
         try:
             # Monitor temperature and pressure during extrusion

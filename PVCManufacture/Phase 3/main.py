@@ -33,7 +33,7 @@ def initialize_production_line(env, line_id: int, resource_manager: ResourceMana
         'mixing': MixingProcess(),
         'extrusion': ExtrusionProcess(),
         'cooling': CoolingProcess(),
-        'cutting': CuttingProcess(),
+        'cutting': CuttingProcess(),    
         'inspection': InspectionProcess()
     }
 

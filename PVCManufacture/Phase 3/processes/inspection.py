@@ -1,5 +1,5 @@
-from .base_process import ManufacturingProcess, ProcessParameters
-from ..utils.constants import PROCESS_PARAMETERS
+from processes.base_process import ManufacturingProcess, ProcessParameters
+from utils.constants import PROCESS_PARAMETERS
 import random
 
 class InspectionProcess(ManufacturingProcess):
@@ -14,16 +14,26 @@ class InspectionProcess(ManufacturingProcess):
             capacity=500.0  # kg per inspection batch
         ))
         self.quality_threshold = quality_threshold
-    
-    async def process_logic(self, env, resources):
+        
+    def process_logic(self, env, resources):
         try:
-            # Simulate inspection process
+            # Simulate inspection process time
             yield env.timeout(self.params.duration)
             
-            # Quality check
-            quality_score = random.random()
-            passed_inspection = quality_score >= self.quality_threshold
+            # Perform quality checks
+            quality_checks = {
+                'visual': random.random(),
+                'dimensional': random.random(),
+                'surface': random.random()
+            }
+            
+            # All quality checks must pass threshold
+            passed_inspection = all(
+                score >= self.quality_threshold 
+                for score in quality_checks.values()
+            )
             
             return passed_inspection
+            
         except Exception as e:
             return False
