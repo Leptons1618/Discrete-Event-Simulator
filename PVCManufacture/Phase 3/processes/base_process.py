@@ -19,11 +19,11 @@ class ManufacturingProcess(ABC):
         self._start_time = 0
         
     @abstractmethod
-    async def process_logic(self, env: Any, resources: Dict[str, Any]) -> bool:
+    def process_logic(self, env: Any, resources: Dict[str, Any]):
         """Implement specific process logic."""
         pass
         
-    async def execute(self, env: Any, resources: Dict[str, Any]) -> bool:
+    def execute(self, env: Any, resources: Dict[str, Any]):
         """Execute the manufacturing process with resource management."""
         self.state = "starting"
         self._start_time = env.now
@@ -40,7 +40,7 @@ class ManufacturingProcess(ABC):
             
             # Execute process-specific logic
             self.state = "running"
-            success = await self.process_logic(env, resources)
+            success = yield from self.process_logic(env, resources)
             
             # Release resources
             for req, (resource_name, _) in zip(requests, self.params.resource_requirements.items()):

@@ -31,7 +31,7 @@ class ExtrusionProcess(ManufacturingProcess):
             self.state = "failed"
             return False
 
-    async def process_logic(self, env, resources):
+    def process_logic(self, env, resources):
         try:
             # Monitor temperature and pressure during extrusion
             current_temp = random.uniform(*self.params.temperature_range)
